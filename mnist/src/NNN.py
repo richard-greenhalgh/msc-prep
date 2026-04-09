@@ -14,13 +14,12 @@ class Model:
         in_out.extend(n_outputs)
         for i in range(len(n_outputs)):
             parent = None if i == 0 else self.layers[i - 1]
-            self.layers.append( Layer(in_out[i], in_out[i+1], ACTIVATION_ReLU, parent) )
+            activation = output_activation if (i+1)==len(n_outputs) else ACTIVATION_ReLU
+            self.layers.append( Layer(in_out[i], in_out[i+1], activation, parent) )
         for i in range(len(self.layers)-1):
             self.layers[i].childLayer = self.layers[i+1]
         self.inputLayer = self.layers[0]
         self.outputLayer = self.layers[-1]
-        # amend output layer activation function
-        self.outputLayer.AF = output_activation
 
     def forward_pass(self, x: np.ndarray):
         return self.inputLayer(x) # Layer.__call__() recurses through layers
@@ -48,12 +47,12 @@ class Model:
 
         return y_pred
     
-    def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01):
+    def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01, show_progress=False):
         MSE_curve = np.zeros(max_epochs)
         for i in range(max_epochs):
             ypred = self.epoch(x_in, y_target, learning_rate)
             MSE_curve[i] = self.MSE
-            if i % 10 == 0:
+            if show_progress and i % 10 == 0:
                 print(f"Epoch: {i:05d} --- ", f"MSE: {self.MSE:.5f} --- ", [f"{y[0]:.3f}" for y in ypred])
         return ypred
     
@@ -69,13 +68,27 @@ class Layer:
     # also: similar for gradients?
 
     def __init__(self, n_input, n_output, activation_func=ACTIVATION_ReLU, parentLayer=None, childLayer=None):
-        self.params = RNG.uniform(-1, 1, (n_output, n_input+1))
-        self.derivs = np.zeros((n_output, n_input+1))
+        self.params = self.params = np.zeros((n_output, n_input + 1), dtype=np.float32)
+        # initialize weights [W<-- b]
+        self.params[:, :-1] = RNG.standard_normal((n_output, n_input), dtype=np.float32)
+        # initialize biases as zero [W b<--]
+        self.params[:, -1] = 0.0
+        # scale weights according to activation type and size of layer
+        if activation_func == ACTIVATION_ReLU:
+            # He initialization
+            # - want activations to have ~constant variance across layers
+            # - scale by 1/n_input, but ReLU zeros out ~50%, so use 2/n_input
+            scale = np.sqrt(2.0 / n_input)
+        else:
+            scale = np.sqrt(1.0 / n_input)
+        self.params[:, :-1] *= scale
+        
+        self.derivs = np.zeros((n_output, n_input+1), dtype=np.float32)
         self.mx_weights = self.params[:, :-1]
         self.vec_biases = self.params[:, -1]
-        self.vec_input = None # store last used input to __call__()
-        self.vec_pre_activations = np.zeros(n_output)
-        self.vec_activations = np.zeros(n_output)
+        self.vec_input = np.zeros(n_input, dtype=np.float32) # store last used input to __call__()
+        self.vec_pre_activations = np.zeros(n_output, dtype=np.float32)
+        self.vec_activations = np.zeros(n_output, dtype=np.float32)
         self.AF = activation_func
         self.parentLayer = parentLayer
         self.childLayer = childLayer
@@ -89,14 +102,14 @@ class Layer:
         self._final_derivs_dL_dw = self._final_derivs_dL_dp[:, :-1]
         self._final_derivs_dL_db = self._final_derivs_dL_dp[:, -1]
         
-        self._upstream_dL_dz = np.zeros(n_output)
-        self._parent_deriv = np.zeros(n_input)
+        self._upstream_dL_dz = np.zeros(n_output, dtype=np.float32)
+        self._parent_deriv = np.zeros(n_input, dtype=np.float32)
 
     def __call__(self, vec_x):
         # - take array of inputs
         # - apply weights/biases/activation function
         # - return array of outputs
-        self.vec_input = vec_x
+        self.vec_input[:] = vec_x
         
         np.dot(self.mx_weights, vec_x, out=self.vec_pre_activations) # z = Wx + b
         self.vec_pre_activations += self.vec_biases
