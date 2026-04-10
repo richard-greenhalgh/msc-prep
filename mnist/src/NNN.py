@@ -2,6 +2,7 @@
 # Neural Network (in) Numpy
 # from-scratch NN implementation for learning purposes
 import numpy as np
+from math import ceil
 
 RNG = np.random.default_rng(seed=42)
 ACTIVATION_ReLU = 'ReLU'
@@ -20,42 +21,78 @@ class Model:
             self.layers[i].childLayer = self.layers[i+1]
         self.inputLayer = self.layers[0]
         self.outputLayer = self.layers[-1]
+        self.epoch_index = None
+        self.fit_stats = None
+        self.MSE_curve_epoch = None
+        self.BPE = None # batches per epoch
+        self.MSE_curve_batch = None
 
     def forward_pass(self, x: np.ndarray):
         return self.inputLayer(x) # Layer.__call__() recurses through layers
 
     def backward_pass(self, deriv0):
-        # back prop from last layer (NOT IMPLEMENTED YET)
+        # back prop from last layer
         self.outputLayer.backprop(deriv0)
 
-    def epoch(self, x_in: np.ndarray, y_target: np.ndarray, learning_rate=0.01):
+    def epoch(self, x_in: np.ndarray, y_target: np.ndarray, learning_rate=0.01, batch_size=256):
         assert x_in.shape[0] == y_target.shape[0] # check number of X matches Y
-        y_pred = np.zeros(y_target.shape, dtype=np.float64)
+        y_pred = np.zeros(y_target.shape, dtype=np.float32)
         self.SSE, self.MSE = 0.0, 0.0
 
         # reset all derivs
         for L in self.layers: L.derivs.fill(0.0)
+        batch_sample, batch_count, batchSSE = 0, 0, 0.0
 
         for i in range(len(x_in)):
             y_pred[i] = self.forward_pass(x_in[i])
             resid = y_pred[i] - y_target[i] # vector of residuals
-            self.backward_pass(2.0 * resid / y_target.size) # deriv of mean squared residuals
-            self.SSE += np.sum(resid**2) # running total of SSE
+            self.backward_pass(2.0 * resid / y_target.shape[1]) # deriv of mean squared residuals
+            sse = np.sum(resid**2)
+            self.SSE += sse # running total of SSE
+            batchSSE += sse
+
+            batch_sample += 1
+            if batch_sample == batch_size: # update params for this batch   
+                for L in self.layers: L.derivs /= batch_sample
+                self.update_params(learning_rate)
+                # track MSE by batch
+                self._store_MSE_batch(batchSSE / ((batch_sample) * y_target[0].size), batch_count)
+                # reset batch info
+                for L in self.layers: L.derivs.fill(0.0)
+                batch_sample, batchSSE = 0, 0.0
+                batch_count += 1
+                
         self.MSE = self.SSE / y_target.size # mean of SSE 
 
-        self.update_params(learning_rate)
+        if batch_sample > 0: # partial batch remaining
+            for L in self.layers: L.derivs /= batch_sample
+            self.update_params(learning_rate)
+            self._store_MSE_batch(batchSSE / ((batch_sample) * y_target[0].size), batch_count)
 
         return y_pred
     
-    def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01, show_progress=False):
-        MSE_curve = np.zeros(max_epochs)
+    def _store_MSE_batch(self, MSE, batch_index):
+        self.MSE_curve_batch[self.epoch_index * self.BPE + batch_index] = MSE
+
+    def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01, batch_size=256, show_progress=False):
+        self.MSE_curve_epoch = np.zeros(max_epochs)
+        self.BPE = ceil(len(x_in)/batch_size) # batches per epoch
+        self.MSE_curve_batch = np.zeros(max_epochs * self.BPE)
         for i in range(max_epochs):
-            ypred = self.epoch(x_in, y_target, learning_rate)
-            MSE_curve[i] = self.MSE
+            self.epoch_index = i
+            ypred = self.epoch(x_in, y_target, learning_rate, batch_size)
+            self.MSE_curve_epoch[i] = self.MSE
             if show_progress and i % 10 == 0:
                 print(f"Epoch: {i:05d} --- ", f"MSE: {self.MSE:.5f} --- ", [f"{y[0]:.3f}" for y in ypred])
-        return ypred
+        # get ypred based on final parameters
+        return self.apply(x_in)
     
+    def apply(self, x_in: np.ndarray): # run the model to get predicted y
+        y_pred = np.zeros((x_in.shape[0], self.outputLayer.vec_activations.shape[0]), dtype=np.float32)
+        for i in range(len(x_in)):
+            y_pred[i] = self.forward_pass(x_in[i])
+        return y_pred
+
     def update_params(self, learning_rate=0.01):
         # update parameters
         for L in self.layers:
@@ -63,9 +100,6 @@ class Model:
 
 class Layer:
     """ a layer of neurons """
-
-    # todo: pack weights, biases into one data structure?
-    # also: similar for gradients?
 
     def __init__(self, n_input, n_output, activation_func=ACTIVATION_ReLU, parentLayer=None, childLayer=None):
         self.params = self.params = np.zeros((n_output, n_input + 1), dtype=np.float32)
