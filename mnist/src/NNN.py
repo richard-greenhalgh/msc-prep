@@ -1,6 +1,27 @@
 # NNN.py
 # Neural Network (in) Numpy
 # from-scratch NN implementation for learning purposes
+
+# TODO:
+# create separate doc explaining the maths?
+# - solidify understanding of Layer.backprop()
+#
+# add callback capability to allow dynamic charts
+# - Model.fit(..., callback=callback_function):
+# -     ...
+# -     # each batch:
+# -     callback({"epoch": epoch, "batch": batch_index, ...})
+#
+# infer learning rate automatically, then decay over time?
+# - run one epoch, increase learning rate each batc, plot loss as function of learning rate
+#
+# softmax / crossentropy loss?
+# - implement stable softmax for output logits
+# - replace MSE with cross-entropy classification loss
+# - use simplified output gradient softmax(logits) - target
+# - compare training speed and validation accuracy vs current MSE version
+# 
+
 import numpy as np
 from math import ceil
 
