@@ -21,6 +21,8 @@
 # - use simplified output gradient softmax(logits) - target
 # - compare training speed and validation accuracy vs current MSE version
 # 
+# add logging capability to keep track of experimentation
+# - CSV file with columns (???)
 
 import numpy as np
 from math import ceil
@@ -33,12 +35,15 @@ class Model:
         assert len(n_outputs) > 0
         self.layers = []
         in_out = [n_input]
-        in_out.extend(n_outputs)
+        in_out.extend(n_outputs) # list with (#in, #out1, #out2, ...)
         for i in range(len(n_outputs)):
+            # parent of layers[i] is layers[i-1]
             parent = None if i == 0 else self.layers[i - 1]
             activation = output_activation if (i+1)==len(n_outputs) else ACTIVATION_ReLU
+            # create the Layer with required no. of inputs/outputs, activation function
             self.layers.append( Layer(in_out[i], in_out[i+1], activation, parent) )
         for i in range(len(self.layers)-1):
+            # child of layers[i] is layers[i+1]
             self.layers[i].childLayer = self.layers[i+1]
         self.inputLayer = self.layers[0]
         self.outputLayer = self.layers[-1]
@@ -46,7 +51,7 @@ class Model:
         self.fit_stats = None
         self.MSE_curve_epoch = None
         self.BPE = None # batches per epoch
-        self.MSE_curve_batch = None
+        self.MSE_curve_batch = None # mean squared error by batch
 
     def forward_pass(self, x: np.ndarray):
         return self.inputLayer(x) # Layer.__call__() recurses through layers
@@ -55,6 +60,8 @@ class Model:
         # back prop from last layer
         self.outputLayer.backprop(deriv0)
 
+    # epoch(): a training pass through all training data
+    # - split into batches via batch_size
     def epoch(self, x_in: np.ndarray, y_target: np.ndarray, learning_rate=0.01, batch_size=256):
         assert x_in.shape[0] == y_target.shape[0] # check number of X matches Y
         y_pred = np.zeros(y_target.shape, dtype=np.float32)
@@ -62,23 +69,27 @@ class Model:
 
         # reset all derivs
         for L in self.layers: L.derivs.fill(0.0)
-        batch_sample, batch_count, batchSSE = 0, 0, 0.0
+        batch_sample = 0  # the counter for samples in this batch
+        batch_count = 0   # the counter for no. of batches
+        batchSSE = 0.0    # the SSE for this batch
 
+        # loop through samples in training data
         for i in range(len(x_in)):
             y_pred[i] = self.forward_pass(x_in[i])
             resid = y_pred[i] - y_target[i] # vector of residuals
             self.backward_pass(2.0 * resid / y_target.shape[1]) # deriv of mean squared residuals
-            sse = np.sum(resid**2)
+            sse = np.sum(resid**2) # sum of squared residuals
             self.SSE += sse # running total of SSE
             batchSSE += sse
 
             batch_sample += 1
             if batch_sample == batch_size: # update params for this batch   
+                # calculate AVERAGE gradients (after acumulating sum of gradients)
                 for L in self.layers: L.derivs /= batch_sample
                 self.update_params(learning_rate)
                 # track MSE by batch
                 self._store_MSE_batch(batchSSE / ((batch_sample) * y_target[0].size), batch_count)
-                # reset batch info
+                # reset batch info, start a new batch
                 for L in self.layers: L.derivs.fill(0.0)
                 batch_sample, batchSSE = 0, 0.0
                 batch_count += 1
@@ -95,6 +106,13 @@ class Model:
     def _store_MSE_batch(self, MSE, batch_index):
         self.MSE_curve_batch[self.epoch_index * self.BPE + batch_index] = MSE
 
+    # fit(): entry point for fitting parameters
+    # x_in: training data
+    # y_target: actuals corresponding to training data
+    # max_epochs: maximum number of passes through the training data
+    # learning_rate: initial learning rate
+    # batch_size: split each epoch into batches with X samples
+    # show_progress: True/Fale
     def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01, batch_size=256, show_progress=False):
         self.MSE_curve_epoch = np.zeros(max_epochs)
         self.BPE = ceil(len(x_in)/batch_size) # batches per epoch
@@ -108,12 +126,14 @@ class Model:
         # get ypred based on final parameters
         return self.apply(x_in)
     
-    def apply(self, x_in: np.ndarray): # run the model to get predicted y
+    # apply(): use the model for inference (run the model to get predicted y)
+    def apply(self, x_in: np.ndarray):
         y_pred = np.zeros((x_in.shape[0], self.outputLayer.vec_activations.shape[0]), dtype=np.float32)
         for i in range(len(x_in)):
             y_pred[i] = self.forward_pass(x_in[i])
         return y_pred
 
+    # update weights/biases during model training
     def update_params(self, learning_rate=0.01):
         # update parameters
         for L in self.layers:
