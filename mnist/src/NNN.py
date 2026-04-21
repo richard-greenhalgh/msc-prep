@@ -48,6 +48,7 @@ class Model:
         self.inputLayer = self.layers[0]
         self.outputLayer = self.layers[-1]
         self.epoch_index = None
+        self.global_batch = None
         self.fit_stats = None
         self.MSE_curve_epoch = None
         self.BPE = None # batches per epoch
@@ -62,7 +63,7 @@ class Model:
 
     # epoch(): a training pass through all training data
     # - split into batches via batch_size
-    def epoch(self, x_in: np.ndarray, y_target: np.ndarray, learning_rate=0.01, batch_size=256):
+    def epoch(self, x_in: np.ndarray, y_target: np.ndarray, learning_rate=0.01, batch_size=256, callback_func=None):
         assert x_in.shape[0] == y_target.shape[0] # check number of X matches Y
         y_pred = np.zeros(y_target.shape, dtype=np.float32)
         self.SSE, self.MSE = 0.0, 0.0
@@ -89,10 +90,15 @@ class Model:
                 self.update_params(learning_rate)
                 # track MSE by batch
                 self._store_MSE_batch(batchSSE / ((batch_sample) * y_target[0].size), batch_count)
+                # callback for live updates?
+                if callback_func is not None:
+                    callback_func(self._make_fit_results(y_pred, self.global_batch))
                 # reset batch info, start a new batch
                 for L in self.layers: L.derivs.fill(0.0)
                 batch_sample, batchSSE = 0, 0.0
                 batch_count += 1
+                self.global_batch += 1
+                
                 
         self.MSE = self.SSE / y_target.size # mean of SSE 
 
@@ -101,8 +107,17 @@ class Model:
             self.update_params(learning_rate)
             self._store_MSE_batch(batchSSE / ((batch_sample) * y_target[0].size), batch_count)
 
-        return y_pred
+        return self._make_fit_results(y_pred, batch_count)
     
+    def _make_fit_results(self, y_pred, batch):
+        return {
+            'Y_PRED': y_pred,
+            'BATCH': batch,
+            'EPOCH': self.epoch_index,
+            'LOSS_CURVE_BATCH': self.MSE_curve_batch,
+            'LOSS_CURVE_EPOCH': self.MSE_curve_epoch
+        }
+
     def _store_MSE_batch(self, MSE, batch_index):
         self.MSE_curve_batch[self.epoch_index * self.BPE + batch_index] = MSE
 
@@ -113,13 +128,14 @@ class Model:
     # learning_rate: initial learning rate
     # batch_size: split each epoch into batches with X samples
     # show_progress: True/Fale
-    def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01, batch_size=256, show_progress=False):
+    def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01, batch_size=256, show_progress=False, callback_func=None):
         self.MSE_curve_epoch = np.zeros(max_epochs)
         self.BPE = ceil(len(x_in)/batch_size) # batches per epoch
         self.MSE_curve_batch = np.zeros(max_epochs * self.BPE)
+        self.global_batch = 0
         for i in range(max_epochs):
             self.epoch_index = i
-            ypred = self.epoch(x_in, y_target, learning_rate, batch_size)
+            ypred = self.epoch(x_in, y_target, learning_rate, batch_size, callback_func)
             self.MSE_curve_epoch[i] = self.MSE
             if show_progress and i % 10 == 0:
                 print(f"Epoch: {i:05d} --- ", f"MSE: {self.MSE:.5f} --- ", [f"{y[0]:.3f}" for y in ypred])

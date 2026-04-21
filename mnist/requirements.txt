@@ -1,5 +1,6 @@
 jupyter
 ipykernel
+ipympl
 numpy
 matplotlib
 tensorflow
