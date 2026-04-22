@@ -89,10 +89,11 @@ class Model:
                 for L in self.layers: L.derivs /= batch_sample
                 self.update_params(learning_rate)
                 # track MSE by batch
-                self._store_MSE_batch(batchSSE / ((batch_sample) * y_target[0].size), batch_count)
+                batchMSE = batchSSE / ((batch_sample) * y_target[0].size)
+                self._store_MSE_batch(batchMSE, batch_count)
                 # callback for live updates?
                 if callback_func is not None:
-                    callback_func(self._make_fit_results(y_pred, self.global_batch))
+                    callback_func(self._make_fit_results(y_pred, self.global_batch, batchMSE))
                 # reset batch info, start a new batch
                 for L in self.layers: L.derivs.fill(0.0)
                 batch_sample, batchSSE = 0, 0.0
@@ -105,14 +106,16 @@ class Model:
         if batch_sample > 0: # partial batch remaining
             for L in self.layers: L.derivs /= batch_sample
             self.update_params(learning_rate)
-            self._store_MSE_batch(batchSSE / ((batch_sample) * y_target[0].size), batch_count)
+            batchMSE = batchSSE / ((batch_sample) * y_target[0].size)
+            self._store_MSE_batch(batchMSE, batch_count)
 
-        return self._make_fit_results(y_pred, batch_count)
+        return self._make_fit_results(y_pred, batch_count, batchMSE)
     
-    def _make_fit_results(self, y_pred, batch):
+    def _make_fit_results(self, y_pred, batch, MSE):
         return {
             'Y_PRED': y_pred,
             'BATCH': batch,
+            'BATCH_MSE': MSE,
             'EPOCH': self.epoch_index,
             'LOSS_CURVE_BATCH': self.MSE_curve_batch,
             'LOSS_CURVE_EPOCH': self.MSE_curve_epoch
@@ -148,6 +151,11 @@ class Model:
         for i in range(len(x_in)):
             y_pred[i] = self.forward_pass(x_in[i])
         return y_pred
+
+    def accuracy(self, x_in: np.ndarray, y_true: np.ndarray) -> float:
+        pred_class = np.argmax(self.apply(x_in), axis=1)
+        true_class = np.argmax(y_true, axis=1)
+        return np.mean(pred_class == true_class)
 
     # update weights/biases during model training
     def update_params(self, learning_rate=0.01):
