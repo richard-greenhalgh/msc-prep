@@ -30,8 +30,10 @@ from math import ceil
 RNG = np.random.default_rng(seed=42)
 ACTIVATION_ReLU = 'ReLU'
 ACTIVATION_None = None
+LOSS_MSE = 'mse'
+LOSS_CROSS_ENTROPY = 'xent'
 class Model:
-    def __init__(self, n_input, n_outputs: list, output_activation=ACTIVATION_None):
+    def __init__(self, n_input, n_outputs: list, output_activation=ACTIVATION_None, loss=LOSS_CROSS_ENTROPY):
         assert len(n_outputs) > 0
         self.layers = []
         in_out = [n_input]
@@ -49,10 +51,10 @@ class Model:
         self.outputLayer = self.layers[-1]
         self.epoch_index = None
         self.global_batch = None
-        self.fit_stats = None
-        self.MSE_curve_epoch = None
+        self.loss_calc = loss
+        self.loss_curve_epoch = None
         self.BPE = None # batches per epoch
-        self.MSE_curve_batch = None # mean squared error by batch
+        self.loss_curve_batch = None # loss by batch
 
     def forward_pass(self, x: np.ndarray):
         return self.inputLayer(x) # Layer.__call__() recurses through layers
@@ -66,64 +68,85 @@ class Model:
     def epoch(self, x_in: np.ndarray, y_target: np.ndarray, learning_rate=0.01, batch_size=256, callback_func=None):
         assert x_in.shape[0] == y_target.shape[0] # check number of X matches Y
         y_pred = np.zeros(y_target.shape, dtype=np.float32)
-        self.SSE, self.MSE = 0.0, 0.0
+        y_softmax = np.zeros(y_target.shape, dtype=np.float32)
+        self.loss_sum, self.loss_avg = 0.0, 0.0
 
         # reset all derivs
         for L in self.layers: L.derivs.fill(0.0)
         batch_sample = 0  # the counter for samples in this batch
         batch_count = 0   # the counter for no. of batches
-        batchSSE = 0.0    # the SSE for this batch
+        batch_loss_sum = 0.0    # the loss for this batch
 
         # loop through samples in training data
         for i in range(len(x_in)):
-            y_pred[i] = self.forward_pass(x_in[i])
-            resid = y_pred[i] - y_target[i] # vector of residuals
-            self.backward_pass(2.0 * resid / y_target.shape[1]) # deriv of mean squared residuals
-            sse = np.sum(resid**2) # sum of squared residuals
-            self.SSE += sse # running total of SSE
-            batchSSE += sse
+            y_pred[i] = self.forward_pass(x_in[i]) # raw logits
+            
+            # Handle different loss methodology
+            if self.loss_calc == LOSS_CROSS_ENTROPY:
+                # softmax reminder: exp(out) / sum( exp(all) )
+                # stable version: deduct highest logit from all logits
+                np.exp(y_pred[i]-np.max(y_pred[i]), out=y_softmax[i])
+                y_softmax[i] /= np.sum(y_softmax[i])
 
+                # use CE loss: -log(p_correct)
+                # !!! NOTE THIS IS ONLY TRUE FOR ONE-HOT / CLASSIFICATION !!!
+                p_correct = y_softmax[i][ np.argmax(y_target[i]) ]
+                sample_loss = -np.log( np.clip(p_correct, 1e-7, 1.0 -1e-7) )
+                self.loss_sum += sample_loss # running total of CE loss
+                batch_loss_sum += sample_loss
+                self.backward_pass(y_softmax[i] - y_target[i]) # probs - y_target
+
+            elif self.loss_calc == LOSS_MSE:
+                resid = y_pred[i] - y_target[i] # vector of residuals
+                sample_loss = np.sum(resid**2) # sum of squared residuals
+                self.loss_sum += sample_loss # running total of SSE
+                batch_loss_sum += sample_loss
+                self.backward_pass(2.0 * resid / y_target.shape[1]) # deriv of mean squared residuals
+            else:
+                raise Exception("Bad loss method: " + self.loss_calc)
+            
             batch_sample += 1
             if batch_sample == batch_size: # update params for this batch   
                 # calculate AVERAGE gradients (after acumulating sum of gradients)
                 for L in self.layers: L.derivs /= batch_sample
                 self.update_params(learning_rate)
-                # track MSE by batch
-                batchMSE = batchSSE / ((batch_sample) * y_target[0].size)
-                self._store_MSE_batch(batchMSE, batch_count)
+                # track loss by batch
+                batch_loss_avg = batch_loss_sum / batch_sample
+                if self.loss_calc == LOSS_MSE: batch_loss_avg /= y_target[0].size
+                self._store_loss_batch(batch_loss_avg, batch_count)
                 # callback for live updates?
                 if callback_func is not None:
-                    callback_func(self._make_fit_results(y_pred, self.global_batch, batchMSE))
+                    callback_func(self._make_fit_results(y_pred, self.global_batch, batch_loss_avg))
                 # reset batch info, start a new batch
                 for L in self.layers: L.derivs.fill(0.0)
-                batch_sample, batchSSE = 0, 0.0
+                batch_sample, batch_loss_sum = 0, 0.0
                 batch_count += 1
                 self.global_batch += 1
                 
-                
-        self.MSE = self.SSE / y_target.size # mean of SSE 
+        self.loss_avg = self.loss_sum / len(y_target) # average loss for epoch
+        if self.loss_calc == LOSS_MSE: self.loss_avg /= y_target[0].size
 
         if batch_sample > 0: # partial batch remaining
             for L in self.layers: L.derivs /= batch_sample
             self.update_params(learning_rate)
-            batchMSE = batchSSE / ((batch_sample) * y_target[0].size)
-            self._store_MSE_batch(batchMSE, batch_count)
+            batch_loss_avg = batch_loss_sum / ((batch_sample) * y_target[0].size)
+            self._store_loss_batch(batch_loss_avg, batch_count)
 
-        return self._make_fit_results(y_pred, batch_count, batchMSE)
+        return self._make_fit_results(y_pred, batch_count, batch_loss_avg)
     
-    def _make_fit_results(self, y_pred, batch, MSE):
+    def _make_fit_results(self, y_pred, batch, loss_avg):
         return {
             'Y_PRED': y_pred,
             'BATCH': batch,
-            'BATCH_MSE': MSE,
+            'BATCH_LOSS': loss_avg,
             'EPOCH': self.epoch_index,
-            'LOSS_CURVE_BATCH': self.MSE_curve_batch,
-            'LOSS_CURVE_EPOCH': self.MSE_curve_epoch,
+            'LOSS_CURVE_BATCH': self.loss_curve_batch,
+            'LOSS_CURVE_EPOCH': self.loss_curve_epoch,
             'NPARAM': self.countParameters()
         }
 
-    def _store_MSE_batch(self, MSE, batch_index):
-        self.MSE_curve_batch[self.epoch_index * self.BPE + batch_index] = MSE
+    def _store_loss_batch(self, loss_avg, batch_index):
+        self.loss_curve_batch[self.epoch_index * self.BPE + batch_index] = loss_avg
 
     # fit(): entry point for fitting parameters
     # x_in: training data
@@ -133,17 +156,17 @@ class Model:
     # batch_size: split each epoch into batches with X samples
     # show_progress: True/Fale
     def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01, batch_size=256, show_progress=False, callback_func=None):
-        self.MSE_curve_epoch = np.zeros(max_epochs)
+        self.loss_curve_epoch = np.zeros(max_epochs)
         self.BPE = ceil(len(x_in)/batch_size) # batches per epoch
-        self.MSE_curve_batch = np.zeros(max_epochs * self.BPE)
+        self.loss_curve_batch = np.zeros(max_epochs * self.BPE)
         self.global_batch = 0
         for i in range(max_epochs):
             self.epoch_index = i
             result = self.epoch(x_in, y_target, learning_rate, batch_size, callback_func)
             ypred = result['Y_PRED']
-            self.MSE_curve_epoch[i] = self.MSE
+            self.loss_curve_epoch[i] = self.loss_avg
             if show_progress and i % 10 == 0:
-                print(f"Epoch: {i:05d} --- ", f"MSE: {self.MSE:.5f} --- ", [f"{y[0]:.3f}" for y in ypred])
+                print(f"Epoch: {i:05d} --- ", f"Loss: {self.loss_avg:.5f} --- ", [f"{y[0]:.3f}" for y in ypred])
         # get ypred based on final parameters
         return result
     

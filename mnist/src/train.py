@@ -80,9 +80,9 @@ def make_live_plot_callback(update_every=10):
 
     plt.ion()
     fig, ax = plt.subplots(figsize=(10, 6))
-    line, = ax.plot([], [], label="Batch MSE")
+    line, = ax.plot([], [], label="Batch Loss")
     ax.set_xlabel("Global batch")
-    ax.set_ylabel("MSE")
+    ax.set_ylabel("Loss")
     ax.set_yscale("log")
     ax.set_title("Live training loss")
     ax.legend()
@@ -91,7 +91,7 @@ def make_live_plot_callback(update_every=10):
 
     def callback(data: dict):
         x = int(data["BATCH"])
-        y = float(data["BATCH_MSE"])
+        y = float(data["BATCH_LOSS"])
 
         x_data.append(x)
         y_data.append(y)
