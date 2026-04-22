@@ -15,15 +15,16 @@ VERBOSE = True
 @dataclass
 class TrainConfig:
     hidden_layers: list[int]
-    max_epochs: int = 3
+    max_epochs: int = 2
     batch_size: int = 256
     learning_rate: float = 0.1
     live_plot: bool = False
     live_update_freq: int = 10   # redraw chart every X batches
 
-def run():
+def run(cfg: TrainConfig = None):
     # !!! SET HIDDEN LAYERS HERE !!!
-    cfg = TrainConfig([32, 32])
+    if cfg is None:
+        cfg = TrainConfig([32, 32])
     x_train, y_train, x_test, y_test = get_dataset()
     x_train_new, y_train_new = preprocess(x_train, y_train)
     x_test_new, y_test_new = preprocess(x_test, y_test)
@@ -44,17 +45,34 @@ def run():
         max_epochs=cfg.max_epochs,
         batch_size=cfg.batch_size,
         learning_rate=cfg.learning_rate,
-        callback_func=callback,
+        callback_func=callback
     )
-    acc_train = model.accuracy(x_train_new, y_train_new) * 100  # accuracy as %
-    acc_test = model.accuracy(x_test_new, y_test_new) * 100     # accuracy as %
     elapsed = time.perf_counter() - t0
+    acc_train = model.accuracy(x_train_new, y_train_new) * 100  # accuracy as %
+    elapsed2 = time.perf_counter() - t0 - elapsed
+    acc_test = model.accuracy(x_test_new, y_test_new) * 100     # accuracy as %
+    infer_rate = 1000 * elapsed2 / len(x_train_new) # time per 1000 samples
     
+    mse_train = model.calcMSE(x_train_new, y_train_new)
+    mse_test = model.calcMSE(x_test_new, y_test_new)
+
     # display resulting accuracy, draw final plot?
     if cfg.live_plot and finish is not None: finish()
+    print(" --- ")
+    print(f"Model architecture (layers)        :", f"inputs({n_inputs}),", f"hidden{cfg.hidden_layers},", f"outputs({n_outputs})")
+    print(f"Model parameter count              : {results['NPARAM']}")
+    print(" --- ")
     print(f"Accuracy on in-sample training data: {acc_train:.3f}%" )
     print(f"Accuracy on out-of-sample test data: {acc_test:.3f}%" )
-    print(f" --- model training completed in {elapsed:.3f}s --- ")
+    print(" --- ")
+    print(f"Generalisation gap                 : {acc_train - acc_test:.3f} pp  (high positive value may indicate overfitting)")
+    print(" --- ")
+    print(f"MSE for in-sample training data    : {mse_train:.6f}")
+    print(f"MSE for out-of-sample test data    : {mse_test:.6f}")
+    print(" --- ")
+    print(f"Model training and inference time:")
+    print(f"    Training            : {elapsed:.3f}s  ({(elapsed/cfg.max_epochs):.3f}s per epoch)")
+    print(f"    Infer (training set): {elapsed2:.3f}s  ({infer_rate:.3f}s per 1000 samples)")
     return results
 
 def make_live_plot_callback(update_every=10):

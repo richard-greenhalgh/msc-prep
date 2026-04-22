@@ -118,7 +118,8 @@ class Model:
             'BATCH_MSE': MSE,
             'EPOCH': self.epoch_index,
             'LOSS_CURVE_BATCH': self.MSE_curve_batch,
-            'LOSS_CURVE_EPOCH': self.MSE_curve_epoch
+            'LOSS_CURVE_EPOCH': self.MSE_curve_epoch,
+            'NPARAM': self.countParameters()
         }
 
     def _store_MSE_batch(self, MSE, batch_index):
@@ -138,12 +139,13 @@ class Model:
         self.global_batch = 0
         for i in range(max_epochs):
             self.epoch_index = i
-            ypred = self.epoch(x_in, y_target, learning_rate, batch_size, callback_func)
+            result = self.epoch(x_in, y_target, learning_rate, batch_size, callback_func)
+            ypred = result['Y_PRED']
             self.MSE_curve_epoch[i] = self.MSE
             if show_progress and i % 10 == 0:
                 print(f"Epoch: {i:05d} --- ", f"MSE: {self.MSE:.5f} --- ", [f"{y[0]:.3f}" for y in ypred])
         # get ypred based on final parameters
-        return self.apply(x_in)
+        return result
     
     # apply(): use the model for inference (run the model to get predicted y)
     def apply(self, x_in: np.ndarray):
@@ -151,7 +153,11 @@ class Model:
         for i in range(len(x_in)):
             y_pred[i] = self.forward_pass(x_in[i])
         return y_pred
-
+    
+    def calcMSE(self, x_in: np.ndarray, y_true: np.ndarray) -> float:
+        y_pred = self.apply(x_in)
+        return np.mean((y_pred - y_true) ** 2)
+    
     def accuracy(self, x_in: np.ndarray, y_true: np.ndarray) -> float:
         pred_class = np.argmax(self.apply(x_in), axis=1)
         true_class = np.argmax(y_true, axis=1)
@@ -162,6 +168,9 @@ class Model:
         # update parameters
         for L in self.layers:
             L.params -= learning_rate * L.derivs
+    
+    def countParameters(self):
+        return sum(L.params.size for L in self.layers)
 
 class Layer:
     """ a layer of neurons """
