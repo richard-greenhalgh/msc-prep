@@ -16,9 +16,9 @@
 # - run one epoch, increase learning rate each batc, plot loss as function of learning rate
 #
 # softmax / crossentropy loss?
-# - implement stable softmax for output logits
-# - replace MSE with cross-entropy classification loss
-# - use simplified output gradient softmax(logits) - target
+# - implement stable softmax for output logits --> DONE
+# - replace MSE with cross-entropy classification loss --> DONE
+# - use simplified output gradient softmax(logits) - target --> DONE
 # - compare training speed and validation accuracy vs current MSE version
 # 
 # add logging capability to keep track of experimentation
@@ -27,14 +27,15 @@
 import numpy as np
 from math import ceil
 
-RNG = np.random.default_rng(seed=42)
+RNG = None
 ACTIVATION_ReLU = 'ReLU'
 ACTIVATION_None = None
 LOSS_MSE = 'MSE'
 LOSS_CROSS_ENTROPY = 'CROSS_ENTROPY'
 class Model:
-    def __init__(self, n_input, n_outputs: list, output_activation=ACTIVATION_None, loss=LOSS_CROSS_ENTROPY):
+    def __init__(self, n_input, n_outputs: list, output_activation=ACTIVATION_None, loss=LOSS_CROSS_ENTROPY, seed=42):
         assert len(n_outputs) > 0
+        self.rng = np.random.default_rng(seed=seed)
         self.layers = []
         in_out = [n_input]
         in_out.extend(n_outputs) # list with (#in, #out1, #out2, ...)
@@ -65,8 +66,15 @@ class Model:
 
     # epoch(): a training pass through all training data
     # - split into batches via batch_size
-    def epoch(self, x_in: np.ndarray, y_target: np.ndarray, learning_rate=0.01, batch_size=256, callback_func=None):
+    def epoch(self, x_in: np.ndarray, y_target: np.ndarray, learning_rate=0.01, batch_size=256, 
+              callback_func=None, shuffle=True):
         assert x_in.shape[0] == y_target.shape[0] # check number of X matches Y
+        
+        if shuffle:
+            perm = self.rng.permutation(len(x_in))
+            x_in = x_in[perm]
+            y_target = y_target[perm]
+        
         y_pred = np.zeros(y_target.shape, dtype=np.float32)
         y_softmax = np.zeros(y_target.shape, dtype=np.float32)
         self.loss_sum, self.loss_avg = 0.0, 0.0
@@ -221,10 +229,11 @@ class Model:
 class Layer:
     """ a layer of neurons """
 
-    def __init__(self, n_input, n_output, activation_func=ACTIVATION_ReLU, parentLayer=None, childLayer=None):
+    def __init__(self, n_input, n_output, activation_func=ACTIVATION_ReLU, parentLayer=None, childLayer=None, rng=None):
+        self.rng = rng if rng is not None else np.random.default_rng()
         self.params = self.params = np.zeros((n_output, n_input + 1), dtype=np.float32)
         # initialize weights [W<-- b]
-        self.params[:, :-1] = RNG.standard_normal((n_output, n_input), dtype=np.float32)
+        self.params[:, :-1] = self.rng.standard_normal((n_output, n_input), dtype=np.float32)
         # initialize biases as zero [W b<--]
         self.params[:, -1] = 0.0
         # scale weights according to activation type and size of layer

@@ -11,15 +11,17 @@ matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 VERBOSE = True
+DEBUG = False
 
 @dataclass
 class TrainConfig:
     hidden_layers: list[int]
+    seed: int = 42
     max_epochs: int = 3
-    batch_size: int = 256
+    batch_size: int = 32
     learning_rate: float = 0.1
-    live_plot: bool = True
-    live_update_freq: int = 10   # redraw chart every X batches
+    live_plot: bool = False
+    live_update_freq: int = 100   # redraw chart every X batches
 
 def run(cfg: TrainConfig = None):
     # !!! SET HIDDEN LAYERS HERE !!!
@@ -31,7 +33,7 @@ def run(cfg: TrainConfig = None):
 
     n_inputs = x_train_new.shape[1]
     n_outputs = y_train_new.shape[1]
-    model = MyNN.Model(n_inputs, cfg.hidden_layers+[n_outputs])
+    model = MyNN.Model(n_inputs, cfg.hidden_layers+[n_outputs], seed=cfg.seed)
 
     callback, finish = (None, None)
     if cfg.live_plot:
@@ -56,24 +58,35 @@ def run(cfg: TrainConfig = None):
     loss_train = model.calcLoss(x_train_new, y_train_new)
     loss_test = model.calcLoss(x_test_new, y_test_new)
 
-    # display resulting accuracy, draw final plot?
-    if cfg.live_plot and finish is not None: finish()
-    print(" --- ")
-    print(f"Model architecture (layers)        :", f"inputs({n_inputs}),", f"hidden{cfg.hidden_layers},", f"outputs({n_outputs})")
-    print(f"Model parameter count              : {results['NPARAM']}")
-    print(f"Training loss method               : {results['LOSS_METHOD']}")
-    print(" --- ")
+    print("=" * 80)
+    print(f"Model architecture (layers):", f"inputs({n_inputs}),", f"hidden{cfg.hidden_layers},", f"outputs({n_outputs})")
+    print(f"Model parameter count      : {results['NPARAM']}")
+    print(f"Training loss method       : {results['LOSS_METHOD']}")
+    print("=" * 80)
+    print(f"RNG seed                  : {cfg.seed}")
+    print(f"Number of training samples: {len(x_train_new)}")
+    print(f"Number of epochs          : {cfg.max_epochs}")
+    print(f"Samples per batch         : {cfg.batch_size}")
+    print("=" * 80)
     print(f"Accuracy on in-sample training data: {acc_train:.3f}%" )
     print(f"Accuracy on out-of-sample test data: {acc_test:.3f}%" )
-    print(" --- ")
-    print(f"Generalisation gap                 : {acc_train - acc_test:.3f} pp  (high positive value may indicate overfitting)")
-    print(" --- ")
-    print(f"Mean loss for in-sample training data    : {loss_train:.6f}")
-    print(f"Mean loss for out-of-sample test data    : {loss_test:.6f}")
-    print(" --- ")
+    print(f"Generalisation gap                 : {acc_train - acc_test:.3f} pp")
+    print("    (high positive value may indicate overfitting)")
+    print("=" * 80)
+    print(f"Mean loss for in-sample training data: {loss_train:.6f}")
+    print(f"Mean loss for out-of-sample test data: {loss_test:.6f}")
+    print("=" * 80)
     print(f"Model training and inference time:")
     print(f"    Training            : {elapsed:.3f}s  ({(elapsed/cfg.max_epochs):.3f}s per epoch)")
     print(f"    Infer (training set): {elapsed2:.3f}s  ({infer_rate:.3f}s per 1000 samples)")
+    print("=" * 80)
+
+    # display resulting accuracy, draw final plot?
+    if cfg.live_plot:
+        if finish is not None: finish()
+    else:
+        final_plot(results)
+    
     return results
 
 def make_live_plot_callback(update_every=10, ma_window=20):
@@ -109,7 +122,7 @@ def make_live_plot_callback(update_every=10, ma_window=20):
             fig.canvas.draw()
             fig.canvas.flush_events()
 
-    def final_plot():
+    def final_live_plot():
         if len(x_data) == 0:
             return
 
@@ -125,7 +138,31 @@ def make_live_plot_callback(update_every=10, ma_window=20):
         plt.ioff()
         plt.show()
 
-    return callback, final_plot
+    return callback, final_live_plot
+
+def final_plot(data: dict):
+    y_data = list(data['LOSS_CURVE_BATCH'])
+    x_data = list(range(len(y_data)))
+    ma_window = min(len(y_data), max(3, int(len(y_data)/50.0)))
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(x_data, y_data, label="Batch Loss", alpha=0.4)
+    
+    if len(y_data) >= ma_window:
+        y_ma = np.convolve(y_data, np.ones(ma_window)/ma_window, mode='valid')
+        x_ma = x_data[ma_window - 1:]  # align lengths
+        ax.plot(x_ma, y_ma, label=f"Moving Avg ({ma_window})", linewidth=2)
+    
+    ax.set_xlabel("Global batch")
+    ax.set_ylabel("Loss")
+    ax.set_yscale("log")
+    ax.set_title("Training loss by batch")
+    ax.legend()
+
+    ax.relim()
+    ax.autoscale_view()
+
+    plt.tight_layout()
+    plt.show()
 
 def preprocess(x, y):
     x = x.astype(np.float32) / 255.0
@@ -164,7 +201,7 @@ def get_dataset():
         if VERBOSE:
             print(f"Saved MNIST dataset to {data_path}")
 
-    if VERBOSE:
+    if DEBUG:
         print("x_train.shape:", x_train.shape, "    y_train.shape:", y_train.shape)
         print("x_test.shape :", x_test.shape, "     y_test.shape:", y_test.shape)
         print("x_train.dtype:", x_train.dtype, "    y_train.dtype:", y_train.dtype)
