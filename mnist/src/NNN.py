@@ -27,7 +27,6 @@
 import numpy as np
 from math import ceil
 
-RNG = None
 ACTIVATION_ReLU = 'ReLU'
 ACTIVATION_None = None
 LOSS_MSE = 'MSE'
@@ -44,7 +43,7 @@ class Model:
             parent = None if i == 0 else self.layers[i - 1]
             activation = output_activation if (i+1)==len(n_outputs) else ACTIVATION_ReLU
             # create the Layer with required no. of inputs/outputs, activation function
-            self.layers.append( Layer(in_out[i], in_out[i+1], activation, parent) )
+            self.layers.append( Layer(in_out[i], in_out[i+1], activation, parent, rng=self.rng) )
         for i in range(len(self.layers)-1):
             # child of layers[i] is layers[i+1]
             self.layers[i].childLayer = self.layers[i+1]
