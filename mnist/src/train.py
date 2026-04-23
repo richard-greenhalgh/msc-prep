@@ -2,9 +2,9 @@
 #import sys, os
 #sys.path.append(os.path.abspath(".."))
 from dataclasses import dataclass
-import time
+import time, os
 import src.NNN as MyNN
-from keras.datasets import mnist
+#from keras.datasets import mnist
 import numpy as np
 import matplotlib
 matplotlib.use("TkAgg")
@@ -76,12 +76,13 @@ def run(cfg: TrainConfig = None):
     print(f"    Infer (training set): {elapsed2:.3f}s  ({infer_rate:.3f}s per 1000 samples)")
     return results
 
-def make_live_plot_callback(update_every=10):
+def make_live_plot_callback(update_every=10, ma_window=20):
     x_data, y_data = [], []
 
     plt.ion()
     fig, ax = plt.subplots(figsize=(10, 6))
-    line, = ax.plot([], [], label="Batch Loss")
+    line_raw, = ax.plot([], [], label="Batch Loss", alpha=0.4)
+    line_ma, = ax.plot([], [], label="Moving Avg", linewidth=2)
     ax.set_xlabel("Global batch")
     ax.set_ylabel("Loss")
     ax.set_yscale("log")
@@ -98,7 +99,11 @@ def make_live_plot_callback(update_every=10):
         y_data.append(y)
 
         if x % update_every == 0:
-            line.set_data(x_data, y_data)
+            line_raw.set_data(x_data, y_data)
+            if len(y_data) >= ma_window:
+                y_ma = np.convolve(y_data, np.ones(ma_window)/ma_window, mode='valid')
+                x_ma = x_data[ma_window - 1:]  # align lengths
+                line_ma.set_data(x_ma, y_ma)
             ax.relim()
             ax.autoscale_view()
             fig.canvas.draw()
@@ -108,7 +113,11 @@ def make_live_plot_callback(update_every=10):
         if len(x_data) == 0:
             return
 
-        line.set_data(x_data, y_data)
+        line_raw.set_data(x_data, y_data)
+        if len(y_data) >= ma_window:
+                y_ma = np.convolve(y_data, np.ones(ma_window)/ma_window, mode='valid')
+                x_ma = x_data[ma_window - 1:]  # align lengths
+                line_ma.set_data(x_ma, y_ma)
         ax.relim()
         ax.autoscale_view()
         fig.canvas.draw()
@@ -125,15 +134,41 @@ def preprocess(x, y):
     return x, y
 
 def get_dataset():
-    # load data using keras
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    data_dir = os.path.join(base_dir, "data")
+    data_path = os.path.join(data_dir, "mnist.npz")
+
+    # load data if already in-situ
+    if os.path.exists(data_path):
+        with np.load(data_path) as f:
+            x_train = f["x_train"]
+            y_train = f["y_train"]
+            x_test = f["x_test"]
+            y_test = f["y_test"]
+    else:
+        # if no data, use keras.datasets.mnist
+        os.makedirs(data_dir, exist_ok=True)
+
+        from keras.datasets import mnist
+
+        (x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+        np.savez_compressed(
+            data_path,
+            x_train=x_train,
+            y_train=y_train,
+            x_test=x_test,
+            y_test=y_test,
+        )
+
+        if VERBOSE:
+            print(f"Saved MNIST dataset to {data_path}")
 
     if VERBOSE:
-        # check the shape of arrays
-        print('x_train.shape:', x_train.shape, '    y_train.shape:', y_train.shape)
-        print('x_test.shape :', x_test.shape, '     y_test.shape:', y_test.shape)
-        print('x_train.dtype:', x_train.dtype, '    y_train.dtype:', y_train.dtype)
-    
+        print("x_train.shape:", x_train.shape, "    y_train.shape:", y_train.shape)
+        print("x_test.shape :", x_test.shape, "     y_test.shape:", y_test.shape)
+        print("x_train.dtype:", x_train.dtype, "    y_train.dtype:", y_train.dtype)
+
     return x_train, y_train, x_test, y_test
 
 #==============================================================================
