@@ -15,10 +15,10 @@ VERBOSE = True
 @dataclass
 class TrainConfig:
     hidden_layers: list[int]
-    max_epochs: int = 2
+    max_epochs: int = 3
     batch_size: int = 256
     learning_rate: float = 0.1
-    live_plot: bool = False
+    live_plot: bool = True
     live_update_freq: int = 10   # redraw chart every X batches
 
 def run(cfg: TrainConfig = None):
@@ -53,22 +53,23 @@ def run(cfg: TrainConfig = None):
     acc_test = model.accuracy(x_test_new, y_test_new) * 100     # accuracy as %
     infer_rate = 1000 * elapsed2 / len(x_train_new) # time per 1000 samples
     
-    mse_train = model.calcMSE(x_train_new, y_train_new)
-    mse_test = model.calcMSE(x_test_new, y_test_new)
+    loss_train = model.calcLoss(x_train_new, y_train_new)
+    loss_test = model.calcLoss(x_test_new, y_test_new)
 
     # display resulting accuracy, draw final plot?
     if cfg.live_plot and finish is not None: finish()
     print(" --- ")
     print(f"Model architecture (layers)        :", f"inputs({n_inputs}),", f"hidden{cfg.hidden_layers},", f"outputs({n_outputs})")
     print(f"Model parameter count              : {results['NPARAM']}")
+    print(f"Training loss method               : {results['LOSS_METHOD']}")
     print(" --- ")
     print(f"Accuracy on in-sample training data: {acc_train:.3f}%" )
     print(f"Accuracy on out-of-sample test data: {acc_test:.3f}%" )
     print(" --- ")
     print(f"Generalisation gap                 : {acc_train - acc_test:.3f} pp  (high positive value may indicate overfitting)")
     print(" --- ")
-    print(f"MSE for in-sample training data    : {mse_train:.6f}")
-    print(f"MSE for out-of-sample test data    : {mse_test:.6f}")
+    print(f"Mean loss for in-sample training data    : {loss_train:.6f}")
+    print(f"Mean loss for out-of-sample test data    : {loss_test:.6f}")
     print(" --- ")
     print(f"Model training and inference time:")
     print(f"    Training            : {elapsed:.3f}s  ({(elapsed/cfg.max_epochs):.3f}s per epoch)")

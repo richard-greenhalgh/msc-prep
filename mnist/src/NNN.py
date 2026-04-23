@@ -30,8 +30,8 @@ from math import ceil
 RNG = np.random.default_rng(seed=42)
 ACTIVATION_ReLU = 'ReLU'
 ACTIVATION_None = None
-LOSS_MSE = 'mse'
-LOSS_CROSS_ENTROPY = 'xent'
+LOSS_MSE = 'MSE'
+LOSS_CROSS_ENTROPY = 'CROSS_ENTROPY'
 class Model:
     def __init__(self, n_input, n_outputs: list, output_activation=ACTIVATION_None, loss=LOSS_CROSS_ENTROPY):
         assert len(n_outputs) > 0
@@ -91,7 +91,7 @@ class Model:
                 # use CE loss: -log(p_correct)
                 # !!! NOTE THIS IS ONLY TRUE FOR ONE-HOT / CLASSIFICATION !!!
                 p_correct = y_softmax[i][ np.argmax(y_target[i]) ]
-                sample_loss = -np.log( np.clip(p_correct, 1e-7, 1.0 -1e-7) )
+                sample_loss = -np.log( np.clip(p_correct, 1e-7, 1.0 - 1e-7) )
                 self.loss_sum += sample_loss # running total of CE loss
                 batch_loss_sum += sample_loss
                 self.backward_pass(y_softmax[i] - y_target[i]) # probs - y_target
@@ -129,7 +129,8 @@ class Model:
         if batch_sample > 0: # partial batch remaining
             for L in self.layers: L.derivs /= batch_sample
             self.update_params(learning_rate)
-            batch_loss_avg = batch_loss_sum / ((batch_sample) * y_target[0].size)
+            batch_loss_avg = batch_loss_sum / batch_sample
+            if self.loss_calc == LOSS_MSE: batch_loss_avg /= y_target[0].size
             self._store_loss_batch(batch_loss_avg, batch_count)
 
         return self._make_fit_results(y_pred, batch_count, batch_loss_avg)
@@ -142,7 +143,8 @@ class Model:
             'EPOCH': self.epoch_index,
             'LOSS_CURVE_BATCH': self.loss_curve_batch,
             'LOSS_CURVE_EPOCH': self.loss_curve_epoch,
-            'NPARAM': self.countParameters()
+            'NPARAM': self.countParameters(),
+            'LOSS_METHOD': self.loss_calc
         }
 
     def _store_loss_batch(self, loss_avg, batch_index):
@@ -171,16 +173,37 @@ class Model:
         return result
     
     # apply(): use the model for inference (run the model to get predicted y)
-    def apply(self, x_in: np.ndarray):
+    # rawLogit=False: return softmax probabilities
+    # rawLogit=True : return raw logits
+    def apply(self, x_in: np.ndarray, rawLogit=False):
         y_pred = np.zeros((x_in.shape[0], self.outputLayer.vec_activations.shape[0]), dtype=np.float32)
         for i in range(len(x_in)):
             y_pred[i] = self.forward_pass(x_in[i])
+            if not rawLogit:
+                np.exp(y_pred[i]-np.max(y_pred[i]), out=y_pred[i])
+                y_pred[i] /= np.sum(y_pred[i])
         return y_pred
     
     def calcMSE(self, x_in: np.ndarray, y_true: np.ndarray) -> float:
-        y_pred = self.apply(x_in)
+        y_pred = self.apply(x_in, rawLogit=True)
         return np.mean((y_pred - y_true) ** 2)
     
+    def calcCELoss(self, x_in: np.ndarray, y_true: np.ndarray) -> float:
+        y_pred = self.apply(x_in) # softmax probabilities
+        class_idx = np.argmax(y_true, axis=1) # vector of true classes
+        rows = np.arange(len(y_pred)) # rows for paired indexing
+        p_correct = y_pred[rows, class_idx] # vector of the model prob. for true classes
+        sample_loss = -np.log(np.clip(p_correct, 1e-7, 1.0 - 1e-7))
+        return np.mean(sample_loss)
+
+    def calcLoss(self, x_in: np.ndarray, y_true: np.ndarray) -> float:
+        if self.loss_calc == LOSS_MSE:
+            return self.calcMSE(x_in, y_true)
+        elif self.loss_calc == LOSS_CROSS_ENTROPY:
+            return self.calcCELoss(x_in, y_true)
+        else:
+            raise Exception("Bad loss method: " + self.loss_calc)
+
     def accuracy(self, x_in: np.ndarray, y_true: np.ndarray) -> float:
         pred_class = np.argmax(self.apply(x_in), axis=1)
         true_class = np.argmax(y_true, axis=1)
