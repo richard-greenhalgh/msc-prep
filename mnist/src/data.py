@@ -59,7 +59,7 @@ class Logger:
         self.timestamp = datetime.now().isoformat(timespec="seconds")
         self.code_fingerprint = self.get_code_fingerprint()
         self.CSV_COLS = ["timestamp", "code_fingerprint", "seed", "hidden_layers", "n_inputs", "n_outputs",
-                         "n_param", "loss_method", "epochs", "batch_size", "learning_rate",
+                         "n_param", "loss_method", "epochs", "batch_size", "optimizer", "learning_rate",
                          "train_accuracy", "test_accuracy", "generalisation_gap_pp",
                          "train_loss", "test_loss", "training_seconds", "seconds_per_epoch",
                          "conv_last_delta", "conv_rel_delta", "conv_rate"]
@@ -85,7 +85,7 @@ class Logger:
     def append_run_csv(self, summary: dict, csv_path=None):
         if csv_path is None: csv_path = self.get_CSV_path()
         
-        row = { k:summary[k] for k in self.CSV_COLS }
+        row = { k:summary.get(k, "") for k in self.CSV_COLS }
 
         # File doesn't exist yet -> simple create
         if not os.path.exists(csv_path):

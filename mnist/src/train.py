@@ -14,9 +14,10 @@ DEBUG = False
 class TrainConfig:
     hidden_layers: list[int]
     seed: int = 42
-    max_epochs: int = 3
+    max_epochs: int = 2
     batch_size: int = 32
-    learning_rate: float = 0.1
+    optimizer: str = MyNN.OPTIMIZER_ADAM
+    learning_rate: float = 0.001
     live_plot: bool = False
     live_update_freq: int = 100   # redraw chart every X batches
 
@@ -30,7 +31,7 @@ def run(cfg: TrainConfig = None, showPlot=True, quiet=False):
 
     n_inputs = x_train_new.shape[1]
     n_outputs = y_train_new.shape[1]
-    model = MyNN.Model(n_inputs, cfg.hidden_layers+[n_outputs], seed=cfg.seed)
+    model = MyNN.Model(n_inputs, cfg.hidden_layers+[n_outputs], seed=cfg.seed, optimizer=cfg.optimizer)
 
     callback, finish = (None, None)
     if cfg.live_plot:
@@ -83,6 +84,7 @@ def run(cfg: TrainConfig = None, showPlot=True, quiet=False):
         "loss_method": results["LOSS_METHOD"],
         "epochs": cfg.max_epochs,
         "batch_size": cfg.batch_size,
+        "optimizer": cfg.optimizer,
         "learning_rate": cfg.learning_rate,
         "train_accuracy": float(acc_train),
         "test_accuracy": float(acc_test),

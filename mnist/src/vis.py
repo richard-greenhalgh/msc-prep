@@ -79,6 +79,7 @@ def final_plot(summary: dict, curve_name: str = 'batch_loss', save_path=None, sh
     title = (
         f"MNIST loss by {curve_type} | hidden={summary['hidden_layers']} | "
         f"loss={summary['loss_method']} | "
+        f"optimizer={summary['optimizer']} | "
         f"train_acc={summary['train_accuracy']:.2f}% | "
         f"test_acc={summary['test_accuracy']:.2f}%"
     )

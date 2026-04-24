@@ -31,10 +31,17 @@ ACTIVATION_ReLU = 'ReLU'
 ACTIVATION_None = None
 LOSS_MSE = 'MSE'
 LOSS_CROSS_ENTROPY = 'CROSS_ENTROPY'
+OPTIMIZER_SGD = 'SGD'
+OPTIMIZER_ADAM = 'ADAM'
+
 class Model:
-    def __init__(self, n_input, n_outputs: list, output_activation=ACTIVATION_None, loss=LOSS_CROSS_ENTROPY, seed=42):
+    def __init__(self, n_input, n_outputs: list, output_activation=ACTIVATION_None, 
+                 loss=LOSS_CROSS_ENTROPY, seed=42, optimizer=OPTIMIZER_SGD):
         assert len(n_outputs) > 0
         self.rng = np.random.default_rng(seed=seed)
+        self.optimizer = optimizer
+        self.optimizer_step = 0
+        if self.optimizer == OPTIMIZER_ADAM: self.setAdamParameters()
         self.layers = []
         in_out = [n_input]
         in_out.extend(n_outputs) # list with (#in, #out1, #out2, ...)
@@ -219,11 +226,30 @@ class Model:
     # update weights/biases during model training
     def update_params(self, learning_rate=0.01):
         # update parameters
+        self.optimizer_step += 1
         for L in self.layers:
-            L.params -= learning_rate * L.derivs
+            if self.optimizer == OPTIMIZER_ADAM:
+                L._adam_m[:] = self.ADAM_beta1 * L._adam_m + (1 - self.ADAM_beta1) * L.derivs
+                L._adam_v[:] = self.ADAM_beta2 * L._adam_v + (1 - self.ADAM_beta2) * (L.derivs ** 2)
+
+                # bias correction
+                t = np.int32(self.optimizer_step)
+                m_hat = L._adam_m / (1 - self.ADAM_beta1**t)
+                v_hat = L._adam_v / (1 - self.ADAM_beta2**t)
+
+                L.params -= learning_rate * m_hat / (np.sqrt(v_hat) + self.ADAM_EPS)
+            elif self.optimizer == OPTIMIZER_SGD:
+                L.params -= learning_rate * L.derivs
+            else:
+                L.params -= learning_rate * L.derivs
     
     def countParameters(self):
         return sum(L.params.size for L in self.layers)
+    
+    def setAdamParameters(self, beta1=0.9, beta2=0.999, eps=1e-8):
+        self.ADAM_beta1 = np.float32(beta1)
+        self.ADAM_beta2 = np.float32(beta2)
+        self.ADAM_EPS = np.float32(eps)
 
 class Layer:
     """ a layer of neurons """
@@ -266,6 +292,10 @@ class Layer:
         
         self._upstream_dL_dz = np.zeros(n_output, dtype=np.float32)
         self._parent_deriv = np.zeros(n_input, dtype=np.float32)
+
+        # buffers for OPTIMIZER_ADAM
+        self._adam_m = np.zeros_like(self.params)
+        self._adam_v = np.zeros_like(self.params)
 
     def __call__(self, vec_x):
         # - take array of inputs
