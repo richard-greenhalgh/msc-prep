@@ -20,7 +20,7 @@ class TrainConfig:
     live_plot: bool = False
     live_update_freq: int = 100   # redraw chart every X batches
 
-def run(cfg: TrainConfig = None):
+def run(cfg: TrainConfig = None, showPlot=True, quiet=False):
     # !!! SET HIDDEN LAYERS HERE !!!
     if cfg is None:
         cfg = TrainConfig([32, 32])
@@ -55,6 +55,19 @@ def run(cfg: TrainConfig = None):
     loss_train = model.calcLoss(x_train_new, y_train_new)
     loss_test = model.calcLoss(x_test_new, y_test_new)
 
+    # convergence metrics:
+    epoch_loss = results["LOSS_CURVE_EPOCH"].tolist()
+    if len(epoch_loss) >= 2:
+        last_delta = epoch_loss[-2] - epoch_loss[-1]
+        rel_delta = last_delta / epoch_loss[-2]
+    else:
+        last_delta = None
+        rel_delta = None
+
+    K = min(5, len(epoch_loss))
+    recent = epoch_loss[-K:]
+    conv_rate = (recent[0] - recent[-1]) / K
+
     # collate results
     log = Logger()
 
@@ -80,35 +93,41 @@ def run(cfg: TrainConfig = None):
         "seconds_per_epoch": elapsed / cfg.max_epochs,
         "batch_loss": results["LOSS_CURVE_BATCH"].tolist(),
         "epoch_loss": results["LOSS_CURVE_EPOCH"].tolist(),
+        "conv_last_delta": float(last_delta) if last_delta is not None else None,
+        "conv_rel_delta": float(rel_delta) if rel_delta is not None else None,
+        "conv_rate": float(conv_rate),
     }
 
-    print("=" * 80)
-    print(f"Model architecture (layers):", f"inputs({n_inputs}),", f"hidden{cfg.hidden_layers},", f"outputs({n_outputs})")
-    print(f"Model parameter count      : {results['NPARAM']}")
-    print(f"Training loss method       : {results['LOSS_METHOD']}")
-    print("=" * 80)
-    print(f"RNG seed                  : {cfg.seed}")
-    print(f"Number of training samples: {len(x_train_new)}")
-    print(f"Number of epochs          : {cfg.max_epochs}")
-    print(f"Samples per batch         : {cfg.batch_size}")
-    print("=" * 80)
-    print(f"Accuracy on in-sample training data: {acc_train:.3f}%" )
-    print(f"Accuracy on out-of-sample test data: {acc_test:.3f}%" )
-    print(f"Generalisation gap                 : {acc_train - acc_test:.3f} pp")
-    print("    (high positive value may indicate overfitting)")
-    print("=" * 80)
-    print(f"Mean loss for in-sample training data: {loss_train:.6f}")
-    print(f"Mean loss for out-of-sample test data: {loss_test:.6f}")
-    print("=" * 80)
-    print(f"Model training and inference time:")
-    print(f"    Training            : {elapsed:.3f}s  ({(elapsed/cfg.max_epochs):.3f}s per epoch)")
-    print(f"    Infer (training set): {elapsed2:.3f}s  ({infer_rate:.3f}s per 1000 samples)")
-    print("=" * 80)
+    if quiet:
+        print(f"Test accuracy: {acc_test:.3f}%  ... completed {elapsed:.3f}s")
+    else:
+        print("=" * 80)
+        print(f"Model architecture (layers):", f"inputs({n_inputs}),", f"hidden{cfg.hidden_layers},", f"outputs({n_outputs})")
+        print(f"Model parameter count      : {results['NPARAM']}")
+        print(f"Training loss method       : {results['LOSS_METHOD']}")
+        print("=" * 80)
+        print(f"RNG seed                  : {cfg.seed}")
+        print(f"Number of training samples: {len(x_train_new)}")
+        print(f"Number of epochs          : {cfg.max_epochs}")
+        print(f"Samples per batch         : {cfg.batch_size}")
+        print("=" * 80)
+        print(f"Accuracy on in-sample training data: {acc_train:.3f}%" )
+        print(f"Accuracy on out-of-sample test data: {acc_test:.3f}%" )
+        print(f"Generalisation gap                 : {acc_train - acc_test:.3f} pp")
+        print("    (high positive value may indicate overfitting)")
+        print("=" * 80)
+        print(f"Mean loss for in-sample training data: {loss_train:.6f}")
+        print(f"Mean loss for out-of-sample test data: {loss_test:.6f}")
+        print("=" * 80)
+        print(f"Model training and inference time:")
+        print(f"    Training            : {elapsed:.3f}s  ({(elapsed/cfg.max_epochs):.3f}s per epoch)")
+        print(f"    Infer (training set): {elapsed2:.3f}s  ({infer_rate:.3f}s per 1000 samples)")
+        print("=" * 80)
 
     # display resulting accuracy, draw final plot?
     if cfg.live_plot:
         if finish is not None: finish()
-    else:
+    elif showPlot:
         final_plot(run_summary)
     
     # log and results

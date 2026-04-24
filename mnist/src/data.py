@@ -61,7 +61,8 @@ class Logger:
         self.CSV_COLS = ["timestamp", "code_fingerprint", "seed", "hidden_layers", "n_inputs", "n_outputs",
                          "n_param", "loss_method", "epochs", "batch_size", "learning_rate",
                          "train_accuracy", "test_accuracy", "generalisation_gap_pp",
-                         "train_loss", "test_loss", "training_seconds", "seconds_per_epoch"]
+                         "train_loss", "test_loss", "training_seconds", "seconds_per_epoch",
+                         "conv_last_delta", "conv_rel_delta", "conv_rate"]
 
     def get_log_dir(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -72,9 +73,17 @@ class Logger:
     def make_run_id(self):
         return datetime.now().strftime("run_%Y%m%d_%H%M%S")
 
-    def append_run_csv(self, summary: dict):
-        log_dir = self.get_log_dir()
-        csv_path = os.path.join(log_dir, "runs_summary.csv")
+    def get_CSV_path(self, subdir:str=None, filename:str=None):
+        if filename is None: filename = "runs_summary.csv"
+        if subdir is None:
+            return os.path.join(self.dir, filename)
+        else:
+            csvdir = os.path.join(self.dir, subdir)
+            os.makedirs(csvdir, exist_ok=True)
+            return os.path.join(csvdir, filename)
+
+    def append_run_csv(self, summary: dict, csv_path=None):
+        if csv_path is None: csv_path = self.get_CSV_path()
         
         row = { k:summary[k] for k in self.CSV_COLS }
 
@@ -116,7 +125,7 @@ class Logger:
                 writer.writerow(row)
 
     def save_run_artifacts(self, summary: dict):
-        log_dir = self.get_log_dir()
+        log_dir = self.dir
 
         runs_dir = os.path.join(log_dir, "runs")
         os.makedirs(runs_dir, exist_ok=True)
@@ -148,6 +157,7 @@ class Logger:
             os.path.join(src_dir, "train.py"),
             os.path.join(src_dir, "data.py"),
             os.path.join(src_dir, "vis.py"),
+            os.path.join(src_dir, "sweep.py"),
         ]
 
         h = hashlib.sha256()
