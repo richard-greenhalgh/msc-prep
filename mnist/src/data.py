@@ -4,10 +4,11 @@ import os, csv, json, hashlib
 from datetime import datetime
 import numpy as np
 
-from src.vis import final_plot
+from src.vis import final_plot, plot_last_hidden_pca
 
 DEBUG = False
-JSON_BLACKLIST = {'batch_loss', 'epoch_loss'} # don't include these (vector) elements in json log
+# don't include these (vector) elements in json log
+JSON_BLACKLIST = {'x_train', 'x_test', 'y_train', 'y_test', 'batch_loss', 'epoch_loss'}
 
 def preprocess(x, y):
     x = x.astype(np.float32) / 255.0
@@ -124,7 +125,7 @@ class Logger:
                 writer = csv.DictWriter(f, fieldnames=existing_fields)
                 writer.writerow(row)
 
-    def save_run_artifacts(self, summary: dict):
+    def save_run_artifacts(self, summary: dict, model):
         log_dir = self.dir
 
         runs_dir = os.path.join(log_dir, "runs")
@@ -147,6 +148,16 @@ class Logger:
         # Epoch plot
         plot_path = os.path.join(run_dir, "loss_plot_epoch.png")
         final_plot(summary, "epoch_loss", save_path=plot_path, show=False)
+
+        # PCA 2D (training data)
+        plot_path = os.path.join(run_dir, "PCA2d_plot_train.png")
+        x, y = summary['x_train'], summary['y_train']
+        plot_last_hidden_pca(model, x, y, summary, n_samples=5000, save_path=plot_path, show=False)
+
+        # PCA 2D (test data)
+        plot_path = os.path.join(run_dir, "PCA2d_plot_test.png")
+        x, y = summary['x_test'], summary['y_test']
+        plot_last_hidden_pca(model, x, y, summary, n_samples=5000, save_path=plot_path, show=False)
 
     def get_code_fingerprint(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))

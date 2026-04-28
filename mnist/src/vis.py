@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 
 def make_live_plot_callback(update_every=10, ma_window=20):
     x_data, y_data = [], []
@@ -95,6 +96,80 @@ def final_plot(summary: dict, curve_name: str = 'batch_loss', save_path=None, sh
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
 
     if show:
-        plt.show()
+        plt.show(block=False)
+    else:
+        plt.close(fig)
+
+def plot_last_hidden_pca(model, x, y, summary, n_samples=5000, save_path=None, show=True):
+
+    perm = model.rng.permutation(len(x))[:n_samples]
+    x = x[perm]
+    y = y[perm]
+
+    A = [] # store sample of activations in final hidden layer
+    labels = [] # store true digit for each sample
+    preds = [] # store model predictions
+
+    # collect activations from the final hidden layer
+    for i in range(len(x)):
+        preds.append( np.argmax(model.forward_pass(x[i])) )
+        A.append(model.layers[-2].vec_activations.copy())
+        labels.append( np.argmax(y[i]) )
+    A = np.array(A)
+    labels = np.array(labels)
+    preds = np.array(preds)
+    correct = preds == labels
+    incorrect = ~correct
+    A_2d = PCA(n_components=2).fit_transform(A)
+
+    x_data = A_2d[:,0]
+    y_data = A_2d[:,1]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # correct predictions
+    scatter = ax.scatter(
+        x_data[correct],
+        y_data[correct],
+        c=labels[correct],
+        cmap='tab10',
+        alpha=0.6,
+        s=10
+    )
+
+    # incorrect predictions (highlighted)
+    ax.scatter(
+        x_data[incorrect],
+        y_data[incorrect],
+        c=labels[incorrect],
+        cmap='tab10',
+        edgecolors='black',
+        linewidths=0.8,
+        s=30,
+        label='Incorrect'
+    )
+    
+    cbar = plt.colorbar(scatter, ax=ax)
+    cbar.set_label("Digit")
+    
+    ax.set_xlabel("PCA[1]")
+    ax.set_ylabel("PCA[2]")
+    #ax.set_yscale("log")
+
+    title = (
+        f"PCA (2D) | hidden={summary['hidden_layers']} | "
+        f"loss={summary['loss_method']} | "
+        f"optimizer={summary['optimizer']} | "
+        f"train_acc={summary['train_accuracy']:.2f}% | "
+        f"test_acc={summary['test_accuracy']:.2f}%"
+    )
+    ax.set_title(title)
+    plt.tight_layout()
+    
+    if save_path is not None:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    if show:
+        plt.show(block=False)
     else:
         plt.close(fig)

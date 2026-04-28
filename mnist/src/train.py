@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import src.NNN as MyNN
 from src.data import preprocess, get_dataset
 from src.data import Logger
-from src.vis import make_live_plot_callback, final_plot
+from src.vis import make_live_plot_callback, final_plot, plot_last_hidden_pca
 
 VERBOSE = True
 DEBUG = False
@@ -14,17 +14,17 @@ DEBUG = False
 class TrainConfig:
     hidden_layers: list[int]
     seed: int = 42
-    max_epochs: int = 2
+    max_epochs: int = 10
     batch_size: int = 32
     optimizer: str = MyNN.OPTIMIZER_ADAM
     learning_rate: float = 0.001
     live_plot: bool = False
     live_update_freq: int = 100   # redraw chart every X batches
 
-def run(cfg: TrainConfig = None, showPlot=True, quiet=False):
+def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
     # !!! SET HIDDEN LAYERS HERE !!!
     if cfg is None:
-        cfg = TrainConfig([32, 32])
+        cfg = TrainConfig([4, 4])
     x_train, y_train, x_test, y_test = get_dataset()
     x_train_new, y_train_new = preprocess(x_train, y_train)
     x_test_new, y_test_new = preprocess(x_test, y_test)
@@ -73,6 +73,10 @@ def run(cfg: TrainConfig = None, showPlot=True, quiet=False):
     log = Logger()
 
     run_summary = {
+        "x_train": x_train_new,
+        "x_test": x_test_new,
+        "y_train": y_train_new,
+        "y_test": y_test_new,
         "run_id": log.runID,
         "timestamp": log.timestamp,
         "code_fingerprint": log.code_fingerprint,
@@ -129,11 +133,19 @@ def run(cfg: TrainConfig = None, showPlot=True, quiet=False):
     # display resulting accuracy, draw final plot?
     if cfg.live_plot:
         if finish is not None: finish()
-    elif showPlot:
+    elif showLossPlot:
         final_plot(run_summary)
     
+    # display 2D PCA plot?
+    if showPCA:
+        plot_last_hidden_pca(model, x_train_new, y_train_new, run_summary, n_samples=5000, save_path=None, show=True)
+
+    if showLossPlot or showPCA:
+        import matplotlib.pyplot as plt
+        plt.show()
+
     # log and results
-    log.save_run_artifacts(run_summary)
+    log.save_run_artifacts(run_summary, model)
     log.append_run_csv(run_summary)
     return run_summary
 
