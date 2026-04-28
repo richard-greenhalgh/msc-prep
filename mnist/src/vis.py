@@ -101,7 +101,7 @@ def final_plot(summary: dict, curve_name: str = 'batch_loss', save_path=None, sh
         plt.close(fig)
 
 def plot_last_hidden_pca(model, x, y, summary, n_samples=5000, save_path=None, show=True):
-
+    # See longer comment at end of file for more information on Principal Component Analysis
     perm = model.rng.permutation(len(x))[:n_samples]
     x = x[perm]
     y = y[perm]
@@ -173,3 +173,66 @@ def plot_last_hidden_pca(model, x, y, summary, n_samples=5000, save_path=None, s
         plt.show(block=False)
     else:
         plt.close(fig)
+
+"""
+# === PCA via eigen-decomposition example calc ===
+# X: (n_samples, n_features)
+# rows = data points (e.g. MNIST activations)
+# cols = features (neurons)
+
+# 1. Mean-center the data
+X_centered = X - X.mean(axis=0)
+
+# 2. Compute covariance matrix (or X^T X equivalent)
+C = X_centered.T @ X_centered   # shape: (n_features, n_features)
+
+# 3. Eigen-decomposition
+eigvals, eigvecs = np.linalg.eigh(C)
+
+# 4. Sort by descending eigenvalue (largest variance first)
+idx = np.argsort(eigvals)[::-1]
+eigvals = eigvals[idx]
+eigvecs = eigvecs[:, idx]
+
+# 5. Select top k principal components
+W = eigvecs[:, :k]   # projection matrix (n_features × k)
+
+# 6. Project data into lower dimension
+Z = X_centered @ W   # (n_samples × k)
+
+# Z is your PCA-reduced data (e.g. 2D for plotting)
+
+# Notes:
+# - eigvecs = principal directions (columns)
+# - eigvals = variance explained along each direction
+# - sorted so eigvals[0] is the most important direction
+# - Z gives coordinates in the new feature space
+
+# In practice:
+# sklearn / numpy PCA uses SVD (X = U Σ V^T) for numerical stability,
+# but produces the same principal components as this method.
+
+
+
+# === PCA via SVD (practical / numerically stable) ===
+# X: (n_samples, n_features)
+
+# 1. Mean-center the data
+X_centered = X - X.mean(axis=0)
+
+# 2. Compute SVD
+# X = U Σ V^T
+U, S, Vt = np.linalg.svd(X_centered, full_matrices=False)
+
+# 3. Principal components (directions)
+# rows of Vt = principal directions
+# so columns of V = Vt.T
+V = Vt.T
+
+# 4. Select top k components
+W = V[:, :k]   # (n_features × k)
+
+# 5. Project data
+Z = X_centered @ W   # (n_samples × k)
+
+"""
