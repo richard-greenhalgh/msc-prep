@@ -59,9 +59,15 @@ class Model:
         self.epoch_index = None
         self.global_batch = None
         self.loss_calc = loss
-        self.loss_curve_epoch = None
+        self.loss_curve_epoch = None      # loss curve for training data
+        self.val_loss_curve_epoch = None  # loss curve for validation data
+        self.val_acc_curve_epoch = None   # acc. curve for validation data
         self.BPE = None # batches per epoch
         self.loss_curve_batch = None # loss by batch
+        self.best_params = None
+        self.best_adam_m = None
+        self.best_adam_v = None
+        self.best_optimizer_step = None
 
     def forward_pass(self, x: np.ndarray):
         return self.inputLayer(x) # Layer.__call__() recurses through layers
@@ -157,12 +163,35 @@ class Model:
             'EPOCH': self.epoch_index,
             'LOSS_CURVE_BATCH': self.loss_curve_batch,
             'LOSS_CURVE_EPOCH': self.loss_curve_epoch,
+            'VAL_LOSS_CURVE_EPOCH': self.val_loss_curve_epoch,
+            'VAL_ACC_CURVE_EPOCH': self.val_acc_curve_epoch,
+            'BEST_VAL_LOSS': None, # final result, set in Model.fit()
+            'BEST_EPOCH': None,    # final result, set in Model.fit()
+            'EPOCHS_RUN': None,    # final result, set in Model.fit()
             'NPARAM': self.countParameters(),
             'LOSS_METHOD': self.loss_calc
         }
 
     def _store_loss_batch(self, loss_avg, batch_index):
         self.loss_curve_batch[self.epoch_index * self.BPE + batch_index] = loss_avg
+
+    def _store_best_params(self):
+        self.best_params = [L.params.copy() for L in self.layers]
+
+        if self.optimizer == OPTIMIZER_ADAM:
+            self.best_adam_m = [L._adam_m.copy() for L in self.layers]
+            self.best_adam_v = [L._adam_v.copy() for L in self.layers]
+            self.best_optimizer_step = self.optimizer_step
+
+
+    def _restore_best_params(self):
+        for i, L in enumerate(self.layers):
+            L.params[:] = self.best_params[i]
+
+            if self.optimizer == OPTIMIZER_ADAM:
+                L._adam_m[:] = self.best_adam_m[i]
+                L._adam_v[:] = self.best_adam_v[i]
+                self.optimizer_step = self.best_optimizer_step
 
     # fit(): entry point for fitting parameters
     # x_in: training data
@@ -171,19 +200,87 @@ class Model:
     # learning_rate: initial learning rate
     # batch_size: split each epoch into batches with X samples
     # show_progress: True/Fale
-    def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01, batch_size=256, show_progress=False, callback_func=None):
-        self.loss_curve_epoch = np.zeros(max_epochs)
-        self.BPE = ceil(len(x_in)/batch_size) # batches per epoch
-        self.loss_curve_batch = np.zeros(max_epochs * self.BPE)
+    def fit(self, x_in: np.ndarray, y_target: np.ndarray, max_epochs=100, learning_rate=0.01, learning_rate_decay=1.00,
+            batch_size=256, callback_func=None, validation_split=0.0, early_stop=False, early_patience=5,
+            restore_best_weights=True):
+        # create validation data split?
+        if validation_split > 0.0:
+            n = len(x_in)
+            perm = self.rng.permutation(n)
+            split = int((1.0 - validation_split) * n)
+
+            train_idx = perm[:split]
+            val_idx = perm[split:]
+
+            x_val = x_in[val_idx]
+            y_val = y_target[val_idx]
+
+            x_train = x_in[train_idx]
+            y_train = y_target[train_idx]
+        else:
+            x_train = x_in
+            y_train = y_target
+            x_val = None
+            y_val = None
+        
+        self.loss_curve_epoch = np.full(max_epochs, np.nan)
+        self.val_loss_curve_epoch = np.full(max_epochs, np.nan)
+        self.val_acc_curve_epoch = np.full(max_epochs, np.nan)
+        self.BPE = ceil(len(x_train)/batch_size) # batches per epoch
+        self.loss_curve_batch = np.full(max_epochs * self.BPE, np.nan)
         self.global_batch = 0
+
+        best_val_loss = np.inf
+        best_epoch = -1
+        epochs_without_improvement = 0
+
         for i in range(max_epochs):
             self.epoch_index = i
-            result = self.epoch(x_in, y_target, learning_rate, batch_size, callback_func)
-            ypred = result['Y_PRED']
+            result = self.epoch(x_train, y_train, learning_rate, batch_size, callback_func)
             self.loss_curve_epoch[i] = self.loss_avg
-            if show_progress and i % 10 == 0:
-                print(f"Epoch: {i:05d} --- ", f"Loss: {self.loss_avg:.5f} --- ", [f"{y[0]:.3f}" for y in ypred])
-        # get ypred based on final parameters
+
+            # use validation data, check for early stop
+            if x_val is not None:
+                val_loss = self.calcLoss(x_val, y_val)
+
+                self.val_loss_curve_epoch[i] = val_loss
+                self.val_acc_curve_epoch[i] = self.accuracy(x_val, y_val)
+
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_epoch = i
+                    epochs_without_improvement = 0
+                    if restore_best_weights:
+                        self._store_best_params()
+                else:
+                    epochs_without_improvement += 1
+
+                if early_stop and epochs_without_improvement >= early_patience:
+                    break
+            
+            learning_rate *= learning_rate_decay
+        # <-- end of loop through epochs
+
+        # restore best weights based on validation set (if applicable)
+        if restore_best_weights and x_val is not None and best_epoch >= 0:
+            self._restore_best_params()
+        
+        # truncate curves if needed
+        epochs_run = i + 1
+        self.loss_curve_epoch = self.loss_curve_epoch[:epochs_run]
+        self.val_loss_curve_epoch = self.val_loss_curve_epoch[:epochs_run]
+        self.val_acc_curve_epoch = self.val_acc_curve_epoch[:epochs_run]
+        self.loss_curve_batch = self.loss_curve_batch[:epochs_run * self.BPE]
+        
+        # capture final results
+        result['LOSS_CURVE_BATCH'] = self.loss_curve_batch
+        result['LOSS_CURVE_EPOCH'] = self.loss_curve_epoch
+        result['VAL_LOSS_CURVE_EPOCH'] = self.val_loss_curve_epoch
+        result['VAL_ACC_CURVE_EPOCH'] = self.val_acc_curve_epoch
+        result['BEST_VAL_LOSS'] = best_val_loss
+        result['BEST_EPOCH'] = best_epoch
+        result['EPOCHS_RUN'] = epochs_run
+
         return result
     
     # apply(): use the model for inference (run the model to get predicted y)

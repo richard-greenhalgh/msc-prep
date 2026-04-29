@@ -8,7 +8,7 @@ from src.vis import final_plot, plot_last_hidden_pca
 
 DEBUG = False
 # don't include these (vector) elements in json log
-JSON_BLACKLIST = {'x_train', 'x_test', 'y_train', 'y_test', 'batch_loss', 'epoch_loss'}
+JSON_BLACKLIST = {"batch_loss", "epoch_loss", "val_loss_curve", "val_acc_curve"}
 
 def preprocess(x, y):
     x = x.astype(np.float32) / 255.0
@@ -59,11 +59,21 @@ class Logger:
         self.runID = self.make_run_id()
         self.timestamp = datetime.now().isoformat(timespec="seconds")
         self.code_fingerprint = self.get_code_fingerprint()
-        self.CSV_COLS = ["timestamp", "code_fingerprint", "seed", "hidden_layers", "n_inputs", "n_outputs",
-                         "n_param", "loss_method", "epochs", "batch_size", "optimizer", "learning_rate",
-                         "train_accuracy", "test_accuracy", "generalisation_gap_pp",
-                         "train_loss", "test_loss", "training_seconds", "seconds_per_epoch",
-                         "conv_last_delta", "conv_rel_delta", "conv_rate"]
+        self.CSV_COLS = [
+            "timestamp", "code_fingerprint", "seed", "hidden_layers",
+            "n_inputs", "n_outputs", "n_param",
+            "loss_method", "epochs", "epochs_run",
+            "batch_size", "optimizer", "learning_rate", "learning_rate_decay",
+
+            "train_accuracy", "val_accuracy", "test_accuracy",
+            "generalisation_gap_pp",
+
+            "train_loss", "val_loss", "test_loss",
+            "best_val_loss", "best_epoch",
+
+            "training_seconds", "seconds_per_epoch",
+            "conv_last_delta", "conv_rel_delta", "conv_rate",
+        ]
 
     def get_log_dir(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -125,7 +135,7 @@ class Logger:
                 writer = csv.DictWriter(f, fieldnames=existing_fields)
                 writer.writerow(row)
 
-    def save_run_artifacts(self, summary: dict, model):
+    def save_run_artifacts(self, summary: dict, model, train_data=None, test_data=None):
         log_dir = self.dir
 
         runs_dir = os.path.join(log_dir, "runs")
@@ -145,19 +155,21 @@ class Logger:
         plot_path = os.path.join(run_dir, "loss_plot_batch.png")
         final_plot(summary, "batch_loss", save_path=plot_path, show=False)
 
-        # Epoch plot
+        # Epoch plot (training data + validation)
         plot_path = os.path.join(run_dir, "loss_plot_epoch.png")
         final_plot(summary, "epoch_loss", save_path=plot_path, show=False)
 
         # PCA 2D (training data)
-        plot_path = os.path.join(run_dir, "PCA2d_plot_train.png")
-        x, y = summary['x_train'], summary['y_train']
-        plot_last_hidden_pca(model, x, y, summary, n_samples=5000, save_path=plot_path, show=False)
+        if train_data is not None:
+            x, y = train_data
+            plot_path = os.path.join(run_dir, "PCA2d_plot_train.png")
+            plot_last_hidden_pca(model, x, y, summary, n_samples=5000, save_path=plot_path, show=False)
 
         # PCA 2D (test data)
-        plot_path = os.path.join(run_dir, "PCA2d_plot_test.png")
-        x, y = summary['x_test'], summary['y_test']
-        plot_last_hidden_pca(model, x, y, summary, n_samples=5000, save_path=plot_path, show=False)
+        if test_data is not None:
+            x, y = test_data
+            plot_path = os.path.join(run_dir, "PCA2d_plot_test.png")
+            plot_last_hidden_pca(model, x, y, summary, n_samples=5000, save_path=plot_path, show=False)
 
     def get_code_fingerprint(self):
         base_dir = os.path.dirname(os.path.dirname(__file__))

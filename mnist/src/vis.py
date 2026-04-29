@@ -58,34 +58,77 @@ def make_live_plot_callback(update_every=10, ma_window=20):
 
     return callback, final_live_plot
 
-def final_plot(summary: dict, curve_name: str = 'batch_loss', save_path=None, show=True):
+def final_plot(summary: dict, curve_name: str = 'epoch_loss', save_path=None, show=True):
     is_batch = curve_name.lower().find('batch') != -1
     is_epoch = not is_batch
+    
     y_data = list(summary[curve_name])
     x_data = list(range(len(y_data)))
     ma_window = min(len(y_data), max(3, int(len(y_data)/50.0)))
     fig, ax = plt.subplots(figsize=(10, 6))
-    label = 'Batch Loss' if is_batch else 'Epoch Loss' if is_epoch else '***ERROR***'
-    ax.plot(x_data, y_data, label=label, alpha=0.4)
     
-    if len(y_data) >= ma_window and is_batch:
-        y_ma = np.convolve(y_data, np.ones(ma_window)/ma_window, mode='valid')
-        x_ma = x_data[ma_window - 1:]  # align lengths
-        ax.plot(x_ma, y_ma, label=f"Moving Avg ({ma_window})", linewidth=2)
+    if is_batch:
+        ax.plot(x_data, y_data, label="Batch Loss", alpha=0.4)
     
-    ax.set_xlabel(label.split()[0])
+        if len(y_data) >= ma_window and is_batch:
+            y_ma = np.convolve(y_data, np.ones(ma_window)/ma_window, mode='valid')
+            x_ma = x_data[ma_window - 1:]  # align lengths
+            ax.plot(x_ma, y_ma, label=f"Moving Avg ({ma_window})", linewidth=2)
+    
+    else:
+        # training loss
+        ax.plot(x_data, y_data, label="Train Loss", linewidth=2)
+
+        # validation loss (if applicable)
+        val_curve = summary.get("val_loss_curve", None)
+        if val_curve is not None:
+            ax.plot(x_data, val_curve, label="Val Loss", linewidth=2)
+
+        # mark best epoch
+        best_epoch = summary.get("best_epoch", None)
+        if best_epoch is not None:
+            ax.axvline(best_epoch, linestyle='--', alpha=0.5, label=f"Best epoch ({best_epoch})")
+        
+        # secondary axis for accuracy
+        val_acc_curve = summary.get("val_acc_curve", None)
+        if val_acc_curve is not None:
+            ax2 = ax.twinx()
+
+            val_acc_pct = [v * 100 for v in val_acc_curve]
+
+            ax2.plot(
+                x_data,
+                val_acc_pct,
+                linestyle="--",
+                linewidth=2,
+                color="green",
+                label="Val Accuracy (%)",
+            )
+
+            ax2.set_ylabel("Accuracy (%)")
+            
+            ymin = min(val_acc_pct)
+            ymax = max(val_acc_pct)
+            margin = (ymax - ymin) * 0.2
+            ax2.set_ylim(max(0, ymin - margin), min(100, ymax + margin))
+
+            # combine legends from both axes
+            lines_1, labels_1 = ax.get_legend_handles_labels()
+            lines_2, labels_2 = ax2.get_legend_handles_labels()
+            ax.legend(lines_1 + lines_2, labels_1 + labels_2)
+    
+    ax.set_xlabel("Epoch" if is_epoch else "Batch")
     ax.set_ylabel("Loss")
     ax.set_yscale("log")
-    curve_type = 'batch' if is_batch else 'epoch' if is_epoch else '???'
+    
     title = (
-        f"MNIST loss by {curve_type} | hidden={summary['hidden_layers']} | "
+        f"MNIST loss | hidden={summary['hidden_layers']} | "
         f"loss={summary['loss_method']} | "
         f"optimizer={summary['optimizer']} | "
         f"train_acc={summary['train_accuracy']:.2f}% | "
         f"test_acc={summary['test_accuracy']:.2f}%"
     )
     ax.set_title(title)
-    ax.legend()
 
     ax.relim()
     ax.autoscale_view()

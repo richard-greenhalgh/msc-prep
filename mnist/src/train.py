@@ -2,6 +2,8 @@
 import time
 from dataclasses import dataclass
 
+import numpy as np
+
 import src.NNN as MyNN
 from src.data import preprocess, get_dataset
 from src.data import Logger
@@ -14,17 +16,18 @@ DEBUG = False
 class TrainConfig:
     hidden_layers: list[int]
     seed: int = 42
-    max_epochs: int = 10
+    max_epochs: int = 30
     batch_size: int = 32
     optimizer: str = MyNN.OPTIMIZER_ADAM
     learning_rate: float = 0.001
+    learning_rate_decay: float = 0.9
     live_plot: bool = False
     live_update_freq: int = 100   # redraw chart every X batches
 
 def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
     # !!! SET HIDDEN LAYERS HERE !!!
     if cfg is None:
-        cfg = TrainConfig([4, 4])
+        cfg = TrainConfig([32, 32])
     x_train, y_train, x_test, y_test = get_dataset()
     x_train_new, y_train_new = preprocess(x_train, y_train)
     x_test_new, y_test_new = preprocess(x_test, y_test)
@@ -45,7 +48,12 @@ def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
         max_epochs=cfg.max_epochs,
         batch_size=cfg.batch_size,
         learning_rate=cfg.learning_rate,
-        callback_func=callback
+        learning_rate_decay=cfg.learning_rate_decay,
+        callback_func=callback,
+        validation_split=0.2,
+        early_stop=True,
+        early_patience=5,
+        restore_best_weights=True
     )
     elapsed = time.perf_counter() - t0
     acc_train = model.accuracy(x_train_new, y_train_new) * 100  # accuracy as %
@@ -73,10 +81,6 @@ def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
     log = Logger()
 
     run_summary = {
-        "x_train": x_train_new,
-        "x_test": x_test_new,
-        "y_train": y_train_new,
-        "y_test": y_test_new,
         "run_id": log.runID,
         "timestamp": log.timestamp,
         "code_fingerprint": log.code_fingerprint,
@@ -90,6 +94,7 @@ def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
         "batch_size": cfg.batch_size,
         "optimizer": cfg.optimizer,
         "learning_rate": cfg.learning_rate,
+        "learning_rate_decay": cfg.learning_rate_decay,
         "train_accuracy": float(acc_train),
         "test_accuracy": float(acc_test),
         "generalisation_gap_pp": float(acc_train - acc_test),
@@ -102,6 +107,14 @@ def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
         "conv_last_delta": float(last_delta) if last_delta is not None else None,
         "conv_rel_delta": float(rel_delta) if rel_delta is not None else None,
         "conv_rate": float(conv_rate),
+        "epochs_run": int(results["EPOCHS_RUN"]),
+        "best_val_loss": float(results["BEST_VAL_LOSS"]) if np.isfinite(results["BEST_VAL_LOSS"]) else None,
+        "best_epoch": int(results["BEST_EPOCH"]) if results["BEST_EPOCH"] >= 0 else None,
+        "val_loss": float(results["BEST_VAL_LOSS"]) if np.isfinite(results["BEST_VAL_LOSS"]) else None,
+        "val_accuracy": float(results["VAL_ACC_CURVE_EPOCH"][results["BEST_EPOCH"]] * 100)
+            if results["BEST_EPOCH"] >= 0 else None,
+        "val_loss_curve": results["VAL_LOSS_CURVE_EPOCH"].tolist(),
+        "val_acc_curve": results["VAL_ACC_CURVE_EPOCH"].tolist(),
     }
 
     if quiet:
@@ -114,7 +127,7 @@ def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
         print("=" * 80)
         print(f"RNG seed                  : {cfg.seed}")
         print(f"Number of training samples: {len(x_train_new)}")
-        print(f"Number of epochs          : {cfg.max_epochs}")
+        print(f"Number of epochs          : {results["EPOCHS_RUN"]}")
         print(f"Samples per batch         : {cfg.batch_size}")
         print("=" * 80)
         print(f"Accuracy on in-sample training data: {acc_train:.3f}%" )
@@ -145,7 +158,12 @@ def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
         plt.show()
 
     # log and results
-    log.save_run_artifacts(run_summary, model)
+    log.save_run_artifacts(
+        run_summary,
+        model,
+        train_data=(x_train_new, y_train_new),
+        test_data=(x_test_new, y_test_new),
+    )
     log.append_run_csv(run_summary)
     return run_summary
 
