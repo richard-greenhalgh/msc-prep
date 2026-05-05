@@ -24,7 +24,7 @@ class TrainConfig:
     live_plot: bool = False
     live_update_freq: int = 100   # redraw chart every X batches
 
-def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
+def run(cfg: TrainConfig = None, showLossPlot=False, showPCA=False, quiet=True):
     # !!! SET HIDDEN LAYERS HERE !!!
     if cfg is None:
         cfg = TrainConfig([32, 32])
@@ -170,5 +170,5 @@ def run(cfg: TrainConfig = None, showLossPlot=True, showPCA=True, quiet=False):
 #==============================================================================
 
 if __name__ == "__main__":
-    run()
+    run(showLossPlot=True, showPCA=True, quiet=False)
 
