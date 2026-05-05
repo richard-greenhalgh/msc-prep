@@ -7,6 +7,38 @@ matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 
+# draw a grid of MNIST images, taken from a larger list, by index
+def draw_grid(imgs: np.ndarray, labels, indices: np.ndarray, shape: tuple[int, int], scale=1.5):
+    rows, cols = shape
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * scale, rows * scale))
+
+    # make axes always iterable, even for 1x1
+    axes = np.array(axes).reshape(rows, cols)
+
+    index_pos = 0
+    for r in range(rows):
+        for c in range(cols):
+            ax = axes[r, c]
+
+            if index_pos < len(indices):
+                idx = indices[index_pos]
+                ax.imshow(imgs[idx], cmap="gray")
+                ax.set_title(str(labels[idx]), fontsize=10, pad=2)
+                index_pos += 1
+            else:
+                # blank unused subplot if grid is larger than number of images
+                ax.axis("off")
+                continue
+
+            ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+# draw a single MNIST image, picked from larger list by index
+def draw_1(imgs, labels, index, scale=1.5):
+    draw_grid(imgs, labels, np.array([index]), (1, 1), scale=scale)
+
 def make_live_plot_callback(update_every=10, ma_window=20):
     x_data, y_data = [], []
 

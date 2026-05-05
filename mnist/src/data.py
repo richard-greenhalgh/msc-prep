@@ -10,9 +10,15 @@ DEBUG = False
 # don't include these (vector) elements in json log
 JSON_BLACKLIST = {"batch_loss", "epoch_loss", "val_loss_curve", "val_acc_curve"}
 
-def preprocess(x, y):
+def preprocess(x, y, flatten=True):
     x = x.astype(np.float32) / 255.0
-    x = x.reshape(x.shape[0], -1) # keep the first dimension, unroll the rest
+    if flatten:
+        # keep the first dimension, unroll the rest
+        x = x.reshape(x.shape[0], -1)
+    else:
+        # for each image use (channel, height, width) convention
+        # (N, 28, 28) → (N, 1, 28, 28)
+        x = x[:, np.newaxis, :, :]
     y = np.eye(10, dtype=np.float32)[y] # the y'th row of a 10x10 identity matrix
     return x, y
 
