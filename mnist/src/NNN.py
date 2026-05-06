@@ -353,7 +353,7 @@ class Layer:
 
     def __init__(self, n_input, n_output, activation_func=ACTIVATION_ReLU, parentLayer=None, childLayer=None, rng=None):
         self.rng = rng if rng is not None else np.random.default_rng()
-        self.params = self.params = np.zeros((n_output, n_input + 1), dtype=np.float32)
+        self.params = np.zeros((n_output, n_input + 1), dtype=np.float32)
         # initialize weights [W<-- b]
         self.params[:, :-1] = self.rng.standard_normal((n_output, n_input), dtype=np.float32)
         # initialize biases as zero [W b<--]
