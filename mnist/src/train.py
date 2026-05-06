@@ -24,13 +24,17 @@ class TrainConfig:
     live_plot: bool = False
     live_update_freq: int = 100   # redraw chart every X batches
 
-def run(cfg: TrainConfig = None, showLossPlot=False, showPCA=False, quiet=True):
+def run(cfg: TrainConfig = None, dataset=None, showLossPlot=False, showPCA=False, quiet=True):
     # !!! SET HIDDEN LAYERS HERE !!!
     if cfg is None:
         cfg = TrainConfig([32, 32])
-    x_train, y_train, x_test, y_test = get_dataset()
-    x_train_new, y_train_new = preprocess(x_train, y_train)
-    x_test_new, y_test_new = preprocess(x_test, y_test)
+    if dataset is None:
+        x_train, y_train, x_test, y_test = get_dataset()
+        x_train_new, y_train_new = preprocess(x_train, y_train)
+        x_test_new, y_test_new = preprocess(x_test, y_test)
+    else:
+        assert len(dataset) == 4
+        x_train_new, y_train_new, x_test_new, y_test_new = dataset
 
     n_inputs = x_train_new.shape[1]
     n_outputs = y_train_new.shape[1]

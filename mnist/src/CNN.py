@@ -69,6 +69,43 @@ def test_filter():
     #draw_grid(np.array([img, r1, r2]), np.array([y_raw[0]]*3), np.array([0,1,2]), (1,3), scale=3)
     #draw_1(np.array([img, result]), [y_raw[0], y_raw[0]], 0, scale=3)
 
+def test_Conv2D_Flatten():
+    # test the "plumbing" of LayerConv2D and LayerFlatten
+    from src.train import TrainConfig, run
+
+    x_raw, y_raw, x_raw_test, y_raw_test = get_dataset() # get train/test data
+    _x_train, y_train = preprocess(x_raw, y_raw, flatten=False)
+    _x_test, y_test = preprocess(x_raw_test, y_raw_test, flatten=False)
+
+    # use less data...
+    n_train = 5000
+    n_test = 1000
+
+    _x_train = _x_train[:n_train]
+    y_train = y_train[:n_train]
+    _x_test = _x_test[:n_test]
+    y_test = y_test[:n_test]
+
+    # create the Conv2D and Flatten layers, "wire" them together with the parent/child
+    Lconv = LayerConv2D((1, 28, 28), n_filters=8, kernel_size=(3, 3), stride=2)
+    Lflat = LayerFlatten(Lconv.output_shape, parentLayer=Lconv)
+    Lconv.childLayer = Lflat
+
+    # create a new dataset by running the forward pass of these two layers via Lconv.__call__()
+    print("transforming [training] data...")
+    x_train = np.zeros((len(_x_train),) + Lflat.output_shape, dtype=np.float32)
+    for i in range(len(_x_train)): x_train[i] = Lconv(_x_train[i])
+    print("transforming [test] data...")
+    x_test = np.zeros((len(_x_test),) + Lflat.output_shape, dtype=np.float32)
+    for i in range(len(_x_test)): x_test[i] = Lconv(_x_test[i])
+
+    # train the MLP model on this new dataset
+    dataset = (x_train, y_train, x_test, y_test)
+    cfg = TrainConfig([32, 32], max_epochs=20)
+
+    run(cfg, dataset, showLossPlot=True, showPCA=True, quiet=False)
+
+    
 
 class LayerConv2D:
     """ a layer of 2D convolution filters """
@@ -287,4 +324,5 @@ class LayerFlatten:
 
 if __name__ == "__main__":
     #test_filter()
-    test_shapes()
+    #test_shapes()
+    test_Conv2D_Flatten()
