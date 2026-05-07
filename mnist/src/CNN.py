@@ -304,21 +304,28 @@ class LayerConv2D:
 class LayerFlatten:
     def __init__(self, input_shape, parentLayer=None, childLayer=None):
         self.input_shape = input_shape
-        self.output_shape = (np.prod(input_shape),)
+        self.output_shape = (int(np.prod(input_shape)),)
         self.parentLayer = parentLayer
         self.childLayer = childLayer
-        self.last_input_shape = None
         self.out = np.zeros(self.output_shape, np.float32)
+        # buffer for backprop()
+        self._parent_deriv = np.zeros(self.input_shape, np.float32)
 
     def __call__(self, x: np.ndarray):
         assert x.shape == self.input_shape
-        self.last_input_shape = x.shape
         self.out[:] = x.reshape(-1) # collapse input to 1D vector
-
         if self.childLayer is None:
             return self.out
         else:
             return self.childLayer(self.out)
+    
+    def backprop(self, upstream_deriv: np.ndarray):
+        assert upstream_deriv.shape == self.output_shape
+        p = self.parentLayer
+        assert p is not None # not valid for flatten to be the first layer, must have parent
+        # take the upstream_deriv, reshape to self.input_shape into self._parent_deriv
+        self._parent_deriv[:] = upstream_deriv.reshape(self.input_shape)
+        p.backprop(self._parent_deriv) # if has parent, keep backprop'ing
 
 #==============================================================================
 
