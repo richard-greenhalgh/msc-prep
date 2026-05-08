@@ -98,7 +98,8 @@ class Model:
             parent.childLayer = self.layers[-1]
             self.outputLayer = self.layers[-1]
         else:
-            # isFirst = True, set as inputLayer
+            # isFirst = True, set as inputLayer AND outputLayer
+            self.outputLayer = self.layers[0]
             self.inputLayer = self.layers[0]
     
     def forward_pass(self, x: np.ndarray):
@@ -208,21 +209,23 @@ class Model:
         self.loss_curve_batch[self.epoch_index * self.BPE + batch_index] = loss_avg
 
     def _store_best_params(self):
-        self.best_params = [L.params.copy() for L in self.layers]
+        self.best_params = [[P.copy() for P in L.params] for L in self.layers]
 
         if self.optimizer == OPTIMIZER_ADAM:
-            self.best_adam_m = [L._adam_m.copy() for L in self.layers]
-            self.best_adam_v = [L._adam_v.copy() for L in self.layers]
+            self.best_adam_m = [[M.copy() for M in L.adam_m] for L in self.layers]
+            self.best_adam_v = [[V.copy() for V in L.adam_v] for L in self.layers]
             self.best_optimizer_step = self.optimizer_step
-
 
     def _restore_best_params(self):
         for i, L in enumerate(self.layers):
-            L.params[:] = self.best_params[i]
+            for P, P_best in zip(L.params, self.best_params[i]):
+                P[:] = P_best
 
             if self.optimizer == OPTIMIZER_ADAM:
-                L._adam_m[:] = self.best_adam_m[i]
-                L._adam_v[:] = self.best_adam_v[i]
+                for M, M_best in zip(L.adam_m, self.best_adam_m[i]):
+                    M[:] = M_best
+                for V, V_best in zip(L.adam_v, self.best_adam_v[i]):
+                    V[:] = V_best
                 self.optimizer_step = self.best_optimizer_step
 
     # fit(): entry point for fitting parameters
@@ -376,7 +379,7 @@ class Model:
                     P -= learning_rate * dP
     
     def countParameters(self):
-        return sum(L.params.size for L in self.layers)
+        return sum(P.size for L in self.layers for P in L.params)
     
     def setAdamParameters(self, beta1=0.9, beta2=0.999, eps=1e-8):
         self.ADAM_beta1 = np.float32(beta1)

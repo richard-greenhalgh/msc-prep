@@ -10,7 +10,7 @@ DEBUG = False
 # don't include these (vector) elements in json log
 JSON_BLACKLIST = {"batch_loss", "epoch_loss", "val_loss_curve", "val_acc_curve"}
 
-def preprocess(x, y, flatten=True):
+def preprocess(x, y, flatten=True, ):
     x = x.astype(np.float32) / 255.0
     if flatten:
         # keep the first dimension, unroll the rest
@@ -22,7 +22,7 @@ def preprocess(x, y, flatten=True):
     y = np.eye(10, dtype=np.float32)[y] # the y'th row of a 10x10 identity matrix
     return x, y
 
-def get_dataset():
+def get_dataset(FULL=True):
     base_dir = os.path.dirname(os.path.dirname(__file__))
     data_dir = os.path.join(base_dir, "data")
     data_path = os.path.join(data_dir, "mnist.npz")
@@ -56,6 +56,12 @@ def get_dataset():
         print("x_train.shape:", x_train.shape, "    y_train.shape:", y_train.shape)
         print("x_test.shape :", x_test.shape, "     y_test.shape:", y_test.shape)
         print("x_train.dtype:", x_train.dtype, "    y_train.dtype:", y_train.dtype)
+
+    if not FULL:
+        x_train = x_train[:1000]
+        y_train = y_train[:1000]
+        x_test = x_test[:500]
+        y_test = y_test[:500]
 
     return x_train, y_train, x_test, y_test
 
@@ -182,7 +188,8 @@ class Logger:
         src_dir = os.path.join(base_dir, "src")
 
         files = [
-            os.path.join(src_dir, "NNN.py"),
+            os.path.join(src_dir, "model.py"),
+            os.path.join(src_dir, "layer.py"),
             os.path.join(src_dir, "train.py"),
             os.path.join(src_dir, "data.py"),
             os.path.join(src_dir, "vis.py"),

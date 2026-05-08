@@ -4,7 +4,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-import src.NNN as MyNN
+from src.model import Layer, Model, OPTIMIZER_ADAM, OPTIMIZER_SGD
+from src.model import LAYER_DENSE, LAYER_CONV2D, LAYER_FLATTEN
+from src.model import ACTIVATION_None, ACTIVATION_ReLU
 from src.data import preprocess, get_dataset
 from src.data import Logger
 from src.vis import make_live_plot_callback, final_plot, plot_last_hidden_pca
@@ -14,35 +16,48 @@ DEBUG = False
 
 @dataclass
 class TrainConfig:
-    hidden_layers: list[int]
+    hidden_layers: list[Layer]
     seed: int = 42
     max_epochs: int = 30
     batch_size: int = 32
-    optimizer: str = MyNN.OPTIMIZER_ADAM
+    optimizer: str = OPTIMIZER_ADAM
     learning_rate: float = 0.001
     learning_rate_decay: float = 0.9
     live_plot: bool = False
     live_update_freq: int = 100   # redraw chart every X batches
+    full_dataset: bool = True
+
+def progress_callback(info):
+    print(f"Epoch {info['EPOCH']+1} | Batch {info['BATCH']}", end="\r")
 
 def run(cfg: TrainConfig = None, dataset=None, showLossPlot=False, showPCA=False, quiet=True):
     # !!! SET HIDDEN LAYERS HERE !!!
     if cfg is None:
-        cfg = TrainConfig([32, 32])
+        cfg = TrainConfig([
+            Layer(LAYER_CONV2D, 4, CNN_kernel_size=(3,3), CNN_stride=2),
+            Layer(LAYER_FLATTEN),
+            Layer(LAYER_DENSE, 32)
+        ])
     if dataset is None:
-        x_train, y_train, x_test, y_test = get_dataset()
-        x_train_new, y_train_new = preprocess(x_train, y_train)
-        x_test_new, y_test_new = preprocess(x_test, y_test)
+        isConv2D = cfg.hidden_layers[0].type == LAYER_CONV2D
+        x_train, y_train, x_test, y_test = get_dataset(FULL=cfg.full_dataset)
+        x_train_new, y_train_new = preprocess(x_train, y_train, flatten=not isConv2D)
+        x_test_new, y_test_new = preprocess(x_test, y_test, flatten=not isConv2D)
     else:
         assert len(dataset) == 4
         x_train_new, y_train_new, x_test_new, y_test_new = dataset
 
+    input_shape = x_train_new[0].shape
     n_inputs = x_train_new.shape[1]
     n_outputs = y_train_new.shape[1]
-    model = MyNN.Model(n_inputs, cfg.hidden_layers+[n_outputs], seed=cfg.seed, optimizer=cfg.optimizer)
+    arch = cfg.hidden_layers + [Layer(LAYER_DENSE, n_outputs, activation=ACTIVATION_None)]
+    model = Model(input_shape, arch, seed=cfg.seed, optimizer=cfg.optimizer)
 
     callback, finish = (None, None)
     if cfg.live_plot:
         callback, finish = make_live_plot_callback(cfg.live_update_freq)
+    else:
+        callback, finish = progress_callback, None
     
     # train the model...
     t0 = time.perf_counter()
@@ -89,7 +104,7 @@ def run(cfg: TrainConfig = None, dataset=None, showLossPlot=False, showPCA=False
         "timestamp": log.timestamp,
         "code_fingerprint": log.code_fingerprint,
         "seed": cfg.seed,
-        "hidden_layers": str(cfg.hidden_layers),
+        "hidden_layers": format_arch(cfg.hidden_layers),
         "n_inputs": int(n_inputs),
         "n_outputs": int(n_outputs),
         "n_param": int(results["NPARAM"]),
@@ -125,7 +140,7 @@ def run(cfg: TrainConfig = None, dataset=None, showLossPlot=False, showPCA=False
         print(f"Test accuracy: {acc_test:.3f}%  ... completed {elapsed:.3f}s")
     else:
         print("=" * 80)
-        print(f"Model architecture (layers):", f"inputs({n_inputs}),", f"hidden{cfg.hidden_layers},", f"outputs({n_outputs})")
+        print(f"Model architecture (layers):", f"inputs({n_inputs}),", f"hidden{format_arch(cfg.hidden_layers)},", f"outputs({n_outputs})")
         print(f"Model parameter count      : {results['NPARAM']}")
         print(f"Training loss method       : {results['LOSS_METHOD']}")
         print("=" * 80)
@@ -170,6 +185,21 @@ def run(cfg: TrainConfig = None, dataset=None, showLossPlot=False, showPCA=False
     )
     log.append_run_csv(run_summary)
     return run_summary
+
+def format_arch(layers: list[Layer]) -> str:
+    parts = []
+    for L in layers:
+        if L.type == LAYER_DENSE:
+            parts.append(f"Dense({L.outputs})")
+        elif L.type == LAYER_FLATTEN:
+            parts.append("Flat")
+        elif L.type == LAYER_CONV2D:
+            k = L.CNN_kernel_size[0]
+            s = L.CNN_stride
+            parts.append(f"Conv({L.outputs},k{k},s{s})")
+        else:
+            parts.append("Unknown")
+    return " → ".join(parts)
 
 #==============================================================================
 
