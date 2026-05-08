@@ -105,8 +105,6 @@ def test_Conv2D_Flatten():
 
     run(cfg, dataset, showLossPlot=True, showPCA=True, quiet=False)
 
-    
-
 class LayerConv2D:
     """ a layer of 2D convolution filters """
 
@@ -240,65 +238,51 @@ class LayerConv2D:
     def backprop(self, upstream_deriv):
         p = self.parentLayer
         # upstream_deriv: 
-        # - is a vector, length equal to no. of outputs of THIS layer
-        # - (equal to the number of ROWS in the weights matrix for THIS layer)
+        # - is an ndarray, same shape as outputs of THIS layer
         # - contains derivatives of the loss wrt THIS layer's outputs (activations)
         # - (dL/da_1, dL/da_2, ..., dL/da_n)
 
-        # (oversimplified!) 1-neuron-per-layer example looks like:
-        # upstream derivative = upstream(layer) = W(layer+1) * W(layer+2) * ... * W(layer n)
-        # dL/dW(layer) = [local deriv = X(layer)] * upstream(layer)
-        # dL/db(layer) = [local deriv = 1.0] * upstream(layer)
-
-        # step 0. transform upstream_derivs from dL/da to dL/dz (wrt pre-activations)
+        # step 1. transform upstream_derivs from dL/da to dL/dz (wrt pre-activations)
         # - dL/dz = dL/da * da/dz
         # - da/dz (ReLU): 0 (if z <= 0), 1 (otherwise)
         # - da/dz (None): 1
         if self.AF == ACTIVATION_ReLU:
-            self._upstream_dL_dz[:] = upstream_deriv * (self.vec_pre_activations > 0)
+            self._upstream_dL_dz[:] = upstream_deriv * (self.pre_activations > 0)
         else:
             self._upstream_dL_dz[:] = upstream_deriv
 
-        # !!! remember [W b] structure !!! (use views)
-        # step 1. calculate, local_derivs for weights matrix
-        # each column populated with input x: x_1, x_2, ..., x_n
-        # (No longer needed, just need _final_derivs..., leaving for posterity)
-        self._local_derivs_dX_dw[:] = self.vec_input
+        # step 2. mirror the forward pass loops, accumulating into derivs_f/derivs_b
+        # each output value z[f, out_i, out_j] was produced from one input window
+        # and one filter slice filters[f, c]
+        self._parent_deriv.fill(0.0)
+        gap_h = self.K_h // 2 # number of inaccessible pixels, due to size of filter
+        gap_w = self.K_w // 2 # number of inaccessible pixels, due to size of filter
+        channels, height, width = self.last_input.shape
+        for f in range(self.n_filters):
+            for h in range(gap_h, height-gap_h, self.stride):
+                for w in range(gap_w, width-gap_w, self.stride):
+                    out_i = (h - gap_h) // self.stride
+                    out_j = (w - gap_w) // self.stride
 
-        # step 2. calculate, local_derivs for bias vector (final column)
-        # (No longer needed, just need _final_derivs..., leaving for posterity)
-        self._local_derivs_dX_db.fill(1.0)
+                    # dz is the scalar "blame" assigned to this particular output pixel.
+                    # We use it to update:
+                    #   1. filter gradients: how much each filter weight contributed
+                    #   2. bias gradients: bias contributed directly to this output
+                    #   3. parent/input gradients: how much loss should be passed back to each input pixel
+                    dz = self._upstream_dL_dz[f, out_i, out_j]
 
-        # step 3. "multiply" by the upstream derivs to get final derivs wrt loss
-        # - we need to scale each row of the local derivs by the corresponding element of the upstream derivs
-        # - this operation is the outer product
-        # - for biases, the local deriv is 1, so the final column equals the upstream derivs
-        self._final_derivs_dL_dw[:] = np.outer(self._upstream_dL_dz, self.vec_input)
-        self._final_derivs_dL_db[:] = self._upstream_dL_dz
+                    self.derivs_b[f] += dz # note bias is applied AFTER summing over channels, not per channel
+                    for c in range(channels):
+                        window = self.last_input[c, h-gap_h:h+gap_h+1, w-gap_w:w+gap_w+1]
+                        # z included window[u, v] * filter[f, c, u, v],
+                        # so dL/d_filter = window * dL/dz
+                        self.derivs_f[f, c] += window * dz
 
-        # step 4. ACCUMULATE derivs from step 3 into self.derivs
-        self.derivs += self._final_derivs_dL_dp
+                        # the same output z also depended on the input window,
+                        # so scatter the filter weights, scaled by dz, back into the input-gradient image
+                        self._parent_deriv[c, h-gap_h:h+gap_h+1, w-gap_w:w+gap_w+1] += self.filters[f, c] * dz
 
-        # step 5. prepare parent_deriv to continue backprop to parent
-        # - becomes the new upstream_deriv for the next layer in backpropagation
-        # - is a vector, length equal to no. of inputs of THIS layer, OR
-        # - is a vector, length equal to no. of outputs of PARENT layer
-        # - contains derivatives of the loss wrt PARENT layer's outputs (activations), OR
-        # - contains derivatives of the loss wrt THIS layer's inputs
-        # - (dL/da_1, dL/da_2, ..., dL/da_n)
         if p is not None: 
-            self._parent_deriv.fill(0)
-            # calculate the weighted sum over the rows of the weights matrix, with each row scaled by dL/dz
-            # ( dL/da(in) = dz(out)/da(in) * dL/dz(out) )
-            # dz(out)/da(in): derivatives wrt inputs leaves the weights (z = a1w1 + a2w2 + ... + b)
-            # dL/dz(out): computed above in self._upstream_dL_dz
-            """ (explicit version for reference)
-            rows, cols = self.mx_weights.shape
-            for i in range(rows):
-                for j in range(cols):
-                self._parent_deriv[j] += self.mx_weights[i][j] * self._upstream_dL_dz[i]
-            """
-            self._parent_deriv[:] = self.mx_weights.T @ self._upstream_dL_dz
             p.backprop(self._parent_deriv) # if has parent, keep backprop'ing
 
 class LayerFlatten:
