@@ -25,37 +25,33 @@
 # - CSV file with columns (???)
 
 import numpy as np
-from math import ceil
 
-ACTIVATION_ReLU = 'ReLU'
-ACTIVATION_None = None
+from math import ceil
+from src.layer import Layer, LayerDense, LayerConv2D, LayerFlatten
+from src.layer import LAYER_DENSE, LAYER_CONV2D, LAYER_FLATTEN
+from src.layer import ACTIVATION_ReLU, ACTIVATION_None
+
 LOSS_MSE = 'MSE'
 LOSS_CROSS_ENTROPY = 'CROSS_ENTROPY'
 OPTIMIZER_SGD = 'SGD'
 OPTIMIZER_ADAM = 'ADAM'
 
 class Model:
-    def __init__(self, n_input, n_outputs: list, output_activation=ACTIVATION_None, 
+    
+    def __init__(self, input_shape, arch: list[Layer], output_activation=ACTIVATION_None, 
                  loss=LOSS_CROSS_ENTROPY, seed=42, optimizer=OPTIMIZER_SGD):
-        assert len(n_outputs) > 0
+        assert len(input_shape) > 0
         self.rng = np.random.default_rng(seed=seed)
         self.optimizer = optimizer
         self.optimizer_step = 0
         if self.optimizer == OPTIMIZER_ADAM: self.setAdamParameters()
+        self.input_shape = input_shape
         self.layers = []
-        in_out = [n_input]
-        in_out.extend(n_outputs) # list with (#in, #out1, #out2, ...)
-        for i in range(len(n_outputs)):
-            # parent of layers[i] is layers[i-1]
-            parent = None if i == 0 else self.layers[i - 1]
-            activation = output_activation if (i+1)==len(n_outputs) else ACTIVATION_ReLU
-            # create the Layer with required no. of inputs/outputs, activation function
-            self.layers.append( Layer(in_out[i], in_out[i+1], activation, parent, rng=self.rng) )
-        for i in range(len(self.layers)-1):
-            # child of layers[i] is layers[i+1]
-            self.layers[i].childLayer = self.layers[i+1]
-        self.inputLayer = self.layers[0]
-        self.outputLayer = self.layers[-1]
+
+        # pass layer arch(itecture) data structure and add layers accordingly
+        for L in arch: self._add_layer(L)
+
+        # set up variables/buffers for further use
         self.epoch_index = None
         self.global_batch = None
         self.loss_calc = loss
@@ -69,6 +65,42 @@ class Model:
         self.best_adam_v = None
         self.best_optimizer_step = None
 
+    def _add_layer(self, L: Layer):
+        isFirst = len(self.layers) == 0
+        parent = None if isFirst else self.layers[-1]
+
+        if L.type == LAYER_DENSE:
+            if not isFirst and len(parent.output_shape) != 1:
+                raise Exception("LAYER_DENSE expects 1D input, use LAYER_FLATTEN if required.")
+            
+            inputs = self.input_shape[0] if isFirst else parent.output_shape[0]
+            self.layers.append( LayerDense(inputs, L.outputs, L.activation, parent, rng=self.rng) )
+        elif L.type == LAYER_FLATTEN:
+            assert parent is not None
+            self.layers.append( LayerFlatten(input_shape=parent.output_shape, parentLayer=parent) )
+        elif L.type == LAYER_CONV2D:
+            self.layers.append( LayerConv2D(
+                input_shape     = self.input_shape if isFirst else parent.output_shape,
+                n_filters       = L.outputs,
+                kernel_size     = L.CNN_kernel_size,
+                stride          = L.CNN_stride,
+                mode            = L.CNN_mode,
+                activation_func = L.activation,
+                parentLayer     = parent,
+                childLayer      = None,
+                rng             = self.rng
+            ) )
+        else:
+            raise Exception("Unknown layer type: " + L.type)
+        
+        if not isFirst:
+            # update child of previous layer, set most recent as output layer
+            parent.childLayer = self.layers[-1]
+            self.outputLayer = self.layers[-1]
+        else:
+            # isFirst = True, set as inputLayer
+            self.inputLayer = self.layers[0]
+    
     def forward_pass(self, x: np.ndarray):
         return self.inputLayer(x) # Layer.__call__() recurses through layers
 
@@ -92,7 +124,7 @@ class Model:
         self.loss_sum, self.loss_avg = 0.0, 0.0
 
         # reset all derivs
-        for L in self.layers: L.derivs.fill(0.0)
+        for L in self.layers: L.reset_derivs()
         batch_sample = 0  # the counter for samples in this batch
         batch_count = 0   # the counter for no. of batches
         batch_loss_sum = 0.0    # the loss for this batch
@@ -128,7 +160,7 @@ class Model:
             batch_sample += 1
             if batch_sample == batch_size: # update params for this batch   
                 # calculate AVERAGE gradients (after acumulating sum of gradients)
-                for L in self.layers: L.derivs /= batch_sample
+                for L in self.layers: L.scale_derivs(batch_sample)
                 self.update_params(learning_rate)
                 # track loss by batch
                 batch_loss_avg = batch_loss_sum / batch_sample
@@ -138,7 +170,7 @@ class Model:
                 if callback_func is not None:
                     callback_func(self._make_fit_results(y_pred, self.global_batch, batch_loss_avg))
                 # reset batch info, start a new batch
-                for L in self.layers: L.derivs.fill(0.0)
+                for L in self.layers: L.reset_derivs()
                 batch_sample, batch_loss_sum = 0, 0.0
                 batch_count += 1
                 self.global_batch += 1
@@ -147,7 +179,7 @@ class Model:
         if self.loss_calc == LOSS_MSE: self.loss_avg /= y_target[0].size
 
         if batch_sample > 0: # partial batch remaining
-            for L in self.layers: L.derivs /= batch_sample
+            for L in self.layers: L.scale_derivs(batch_sample)
             self.update_params(learning_rate)
             batch_loss_avg = batch_loss_sum / batch_sample
             if self.loss_calc == LOSS_MSE: batch_loss_avg /= y_target[0].size
@@ -326,19 +358,22 @@ class Model:
         self.optimizer_step += 1
         for L in self.layers:
             if self.optimizer == OPTIMIZER_ADAM:
-                L._adam_m[:] = self.ADAM_beta1 * L._adam_m + (1 - self.ADAM_beta1) * L.derivs
-                L._adam_v[:] = self.ADAM_beta2 * L._adam_v + (1 - self.ADAM_beta2) * (L.derivs ** 2)
+                for P, dP, M, V in zip(L.params, L.derivs, L.adam_m, L.adam_v):
+                    M[:] = self.ADAM_beta1 * M + (1 - self.ADAM_beta1) * dP
+                    V[:] = self.ADAM_beta2 * V + (1 - self.ADAM_beta2) * (dP ** 2)
 
-                # bias correction
-                t = np.int32(self.optimizer_step)
-                m_hat = L._adam_m / (1 - self.ADAM_beta1**t)
-                v_hat = L._adam_v / (1 - self.ADAM_beta2**t)
+                    # bias correction
+                    t = np.int32(self.optimizer_step)
+                    m_hat = M / (1 - self.ADAM_beta1**t)
+                    v_hat = V / (1 - self.ADAM_beta2**t)
 
-                L.params -= learning_rate * m_hat / (np.sqrt(v_hat) + self.ADAM_EPS)
+                    P -= learning_rate * m_hat / (np.sqrt(v_hat) + self.ADAM_EPS)
             elif self.optimizer == OPTIMIZER_SGD:
-                L.params -= learning_rate * L.derivs
+                for P, dP in zip(L.params, L.derivs):
+                    P -= learning_rate * dP
             else:
-                L.params -= learning_rate * L.derivs
+                for P, dP in zip(L.params, L.derivs):
+                    P -= learning_rate * dP
     
     def countParameters(self):
         return sum(L.params.size for L in self.layers)
@@ -347,160 +382,3 @@ class Model:
         self.ADAM_beta1 = np.float32(beta1)
         self.ADAM_beta2 = np.float32(beta2)
         self.ADAM_EPS = np.float32(eps)
-
-class Layer:
-    """ a layer of neurons """
-
-    def __init__(self, n_input, n_output, activation_func=ACTIVATION_ReLU, parentLayer=None, childLayer=None, rng=None):
-        self.rng = rng if rng is not None else np.random.default_rng()
-        self.params = np.zeros((n_output, n_input + 1), dtype=np.float32)
-        # initialize weights [W<-- b]
-        self.params[:, :-1] = self.rng.standard_normal((n_output, n_input), dtype=np.float32)
-        # initialize biases as zero [W b<--]
-        self.params[:, -1] = 0.0
-        # scale weights according to activation type and size of layer
-        if activation_func == ACTIVATION_ReLU:
-            # He initialization
-            # - want activations to have ~constant variance across layers
-            # - scale by 1/n_input, but ReLU zeros out ~50%, so use 2/n_input
-            scale = np.sqrt(2.0 / n_input)
-        else:
-            scale = np.sqrt(1.0 / n_input)
-        self.params[:, :-1] *= scale
-        
-        self.derivs = np.zeros((n_output, n_input+1), dtype=np.float32)
-        self.mx_weights = self.params[:, :-1]
-        self.vec_biases = self.params[:, -1]
-        self.vec_input = np.zeros(n_input, dtype=np.float32) # store last used input to __call__()
-        self.vec_pre_activations = np.zeros(n_output, dtype=np.float32)
-        self.vec_activations = np.zeros(n_output, dtype=np.float32)
-        self.AF = activation_func
-        self.parentLayer = parentLayer
-        self.childLayer = childLayer
-
-        # allocate buffers/views for use in backprop()
-        self._local_derivs = np.zeros_like(self.derivs)
-        self._local_derivs_dX_dw = self._local_derivs[:, :-1]
-        self._local_derivs_dX_db = self._local_derivs[:, -1]
-
-        self._final_derivs_dL_dp = np.zeros_like(self.derivs)
-        self._final_derivs_dL_dw = self._final_derivs_dL_dp[:, :-1]
-        self._final_derivs_dL_db = self._final_derivs_dL_dp[:, -1]
-        
-        self._upstream_dL_dz = np.zeros(n_output, dtype=np.float32)
-        self._parent_deriv = np.zeros(n_input, dtype=np.float32)
-
-        # buffers for OPTIMIZER_ADAM
-        self._adam_m = np.zeros_like(self.params)
-        self._adam_v = np.zeros_like(self.params)
-
-    def __call__(self, vec_x):
-        # - take array of inputs
-        # - apply weights/biases/activation function
-        # - return array of outputs
-        self.vec_input[:] = vec_x
-        
-        np.dot(self.mx_weights, vec_x, out=self.vec_pre_activations) # z = Wx + b
-        self.vec_pre_activations += self.vec_biases
-        if self.AF == ACTIVATION_ReLU:
-            np.maximum(self.vec_pre_activations, 0, out=self.vec_activations)
-        else:
-            # no activation function
-            self.vec_activations[:] = self.vec_pre_activations
-
-        if self.childLayer is None:
-            return self.vec_activations
-        else:
-            return self.childLayer(self.vec_activations)
-    
-    def backprop(self, upstream_deriv):
-        p = self.parentLayer
-        # upstream_deriv: 
-        # - is a vector, length equal to no. of outputs of THIS layer
-        # - (equal to the number of ROWS in the weights matrix for THIS layer)
-        # - contains derivatives of the loss wrt THIS layer's outputs (activations)
-        # - (dL/da_1, dL/da_2, ..., dL/da_n)
-
-        # (oversimplified!) 1-neuron-per-layer example looks like:
-        # upstream derivative = upstream(layer) = W(layer+1) * W(layer+2) * ... * W(layer n)
-        # dL/dW(layer) = [local deriv = X(layer)] * upstream(layer)
-        # dL/db(layer) = [local deriv = 1.0] * upstream(layer)
-
-        # step 0. transform upstream_derivs from dL/da to dL/dz (wrt pre-activations)
-        # - dL/dz = dL/da * da/dz
-        # - da/dz (ReLU): 0 (if z <= 0), 1 (otherwise)
-        # - da/dz (None): 1
-        if self.AF == ACTIVATION_ReLU:
-            self._upstream_dL_dz[:] = upstream_deriv * (self.vec_pre_activations > 0)
-        else:
-            self._upstream_dL_dz[:] = upstream_deriv
-
-        # !!! remember [W b] structure !!! (use views)
-        # step 1. calculate, local_derivs for weights matrix
-        # each column populated with input x: x_1, x_2, ..., x_n
-        # (No longer needed, just need _final_derivs..., leaving for posterity)
-        self._local_derivs_dX_dw[:] = self.vec_input
-
-        # step 2. calculate, local_derivs for bias vector (final column)
-        # (No longer needed, just need _final_derivs..., leaving for posterity)
-        self._local_derivs_dX_db.fill(1.0)
-
-        # step 3. "multiply" by the upstream derivs to get final derivs wrt loss
-        # - we need to scale each row of the local derivs by the corresponding element of the upstream derivs
-        # - this operation is the outer product
-        # - for biases, the local deriv is 1, so the final column equals the upstream derivs
-        self._final_derivs_dL_dw[:] = np.outer(self._upstream_dL_dz, self.vec_input)
-        self._final_derivs_dL_db[:] = self._upstream_dL_dz
-
-        # step 4. ACCUMULATE derivs from step 3 into self.derivs
-        self.derivs += self._final_derivs_dL_dp
-
-        # step 5. prepare parent_deriv to continue backprop to parent
-        # - becomes the new upstream_deriv for the next layer in backpropagation
-        # - is a vector, length equal to no. of inputs of THIS layer, OR
-        # - is a vector, length equal to no. of outputs of PARENT layer
-        # - contains derivatives of the loss wrt PARENT layer's outputs (activations), OR
-        # - contains derivatives of the loss wrt THIS layer's inputs
-        # - (dL/da_1, dL/da_2, ..., dL/da_n)
-        if p is not None: 
-            self._parent_deriv.fill(0)
-            # calculate the weighted sum over the rows of the weights matrix, with each row scaled by dL/dz
-            # ( dL/da(in) = dz(out)/da(in) * dL/dz(out) )
-            # dz(out)/da(in): derivatives wrt inputs leaves the weights (z = a1w1 + a2w2 + ... + b)
-            # dL/dz(out): computed above in self._upstream_dL_dz
-            """ (explicit version for reference)
-            rows, cols = self.mx_weights.shape
-            for i in range(rows):
-                for j in range(cols):
-                self._parent_deriv[j] += self.mx_weights[i][j] * self._upstream_dL_dz[i]
-            """
-            self._parent_deriv[:] = self.mx_weights.T @ self._upstream_dL_dz
-            p.backprop(self._parent_deriv) # if has parent, keep backprop'ing
-
-
-def test_Layer():
-    l = Layer(3, 2)
-    x = np.array([1.0, 2.0, 3.0])
-    l(x)
-    print(l.mx_weights)
-    print(l.vec_biases)
-    print(l.vec_activations)
-
-def test_Model():
-    M = Model(3, [4, 4, 1])
-
-    xs = np.array([
-        [2.0, 3.0, -1.0],
-        [3.0, -1.0, 0.5],
-        [0.5, 1.0, 1.0],
-        [1.0, 1.0, -1.0]
-    ])
-
-    ys = np.array([[1.0], [-1.0], [-1.0], [1.0]])
-
-    #for i in range(100):
-    #    ypred = M.epoch(xs, ys, learning_rate=0.094)
-    #    if i % 10 == 0:
-    #        print(f"{i:05d} --- ", f"MSE: {M.MSE:.5f} --- ", [f"{y[0]:.3f}" for y in ypred])
-
-    M.fit(xs, ys, learning_rate=0.094)
