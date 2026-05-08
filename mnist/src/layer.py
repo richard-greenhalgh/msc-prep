@@ -1,8 +1,50 @@
 # layer.py
 # LayerDense / LayerConv2D / LayerFlatten
 
-# TODO LIST:
-# -- ???
+# =============================================================================
+# TODO (Next Steps for CNN Work)
+# =============================================================================
+
+# --- Core Experiments ---
+# [ ] Compare architectures:
+#     - Dense(32,32) baseline
+#     - Conv → Flat → Dense
+#     - Conv → Conv → Flat → Dense
+#     → track accuracy, convergence speed, generalisation gap
+
+# --- Visualisation ---
+# [ ] Visualise learned filters (plot each 3x3 kernel)
+# [ ] Visualise feature maps for a sample image (per filter output)
+
+# --- Model Scaling ---
+# [ ] Increase n_filters (8 → 16 → 32) and observe impact
+# [ ] Try multiple Conv2D layers in succession
+
+# --- CNN Features ---
+# [ ] Add padding support ("same" mode)
+# [ ] Implement LayerMaxPool2D (2x2, stride 2)
+# [ ] Try architectures: Conv → Pool → Conv → Pool → Dense
+
+# --- Alternative Architectures ---
+# [ ] Try Global Average Pooling instead of Flatten
+#     (Conv → avg spatial dims → Dense)
+
+# --- Training Experiments ---
+# [ ] Tune learning rate (e.g. 1e-3, 1e-2, 3e-4)
+# [ ] Experiment with batch size (32 / 64 / 128)
+# [ ] Overfitting test on small dataset (~1k samples)
+
+# --- Performance / Engineering ---
+# [ ] Profile runtime (forward vs backward cost)
+# [ ] Optionally extend Numba usage further if needed
+# [ ] Consider reducing duplicate shape calculations (minor cleanup)
+
+# --- Stretch / Advanced ---
+# [ ] Try Conv-only model (no Dense layers)
+#     (Conv → Conv → GlobalAvgPool → Softmax)
+# [ ] Build a CNN that consistently beats MLP baseline
+
+# =============================================================================
 
 from dataclasses import dataclass
 from math import floor
