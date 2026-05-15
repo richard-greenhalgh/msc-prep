@@ -16,6 +16,8 @@ python -m pip install -r "$req"
 
 python -m ipykernel install --user --name=mnist --display-name "Python (mnist)"
 
+bash setup_torch.sh
+
 echo "Setup complete, installed:"
 cat $req
 echo "Installed system package: python3-tk"

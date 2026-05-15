@@ -5,3 +5,4 @@ __pycache__/
 /mnist/data/
 /mnist/logs/
 *.swp
+/mnist/numba_dump/

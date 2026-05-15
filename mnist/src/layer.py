@@ -437,6 +437,7 @@ class LayerConv2D:
         if p is not None: 
             p.backprop(self._parent_deriv) # if has parent, keep backprop'ing
 
+#@njit(fastmath=True)
 @njit
 def conv2d_forward_core(x, filters, biases, stride, K_h, K_w):
     C, H, W = x.shape
@@ -470,6 +471,7 @@ def conv2d_forward_core(x, filters, biases, stride, K_h, K_w):
 
     return out
 
+#@njit(fastmath=True)
 @njit
 def conv2d_backward_core(
     x,
@@ -605,6 +607,7 @@ def test_Conv2D_filter():
 def test_Conv2D_Flatten():
     # test the "plumbing" of LayerConv2D and LayerFlatten
     from src.train import TrainConfig, run
+    from src.tool import dump_numba_inspection
 
     x_raw, y_raw, x_raw_test, y_raw_test = get_dataset() # get train/test data
     _x_train, y_train = preprocess(x_raw, y_raw, flatten=False)
@@ -634,9 +637,17 @@ def test_Conv2D_Flatten():
 
     # train the MLP model on this new dataset
     dataset = (x_train, y_train, x_test, y_test)
-    cfg = TrainConfig([32, 32], max_epochs=20)
+    arch = [
+        Layer(LAYER_DENSE, 32),
+        Layer(LAYER_DENSE, 32),
+    ]
+    cfg = TrainConfig(arch, max_epochs=20)
 
     run(cfg, dataset, showLossPlot=True, showPCA=True, quiet=False)
+
+    dump_numba_inspection(conv2d_forward_core)
+
+
 
 #==============================================================================
 

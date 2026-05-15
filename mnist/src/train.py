@@ -34,7 +34,8 @@ def run(cfg: TrainConfig = None, dataset=None, showLossPlot=False, showPCA=False
     # !!! SET HIDDEN LAYERS HERE !!!
     if cfg is None:
         cfg = TrainConfig([
-            Layer(LAYER_CONV2D, 4, CNN_kernel_size=(3,3), CNN_stride=2),
+            #Layer(LAYER_CONV2D, 8, CNN_kernel_size=(5,5), CNN_stride=1),
+            Layer(LAYER_CONV2D, 4, CNN_kernel_size=(3,3), CNN_stride=1),
             Layer(LAYER_FLATTEN),
             Layer(LAYER_DENSE, 32)
         ])
