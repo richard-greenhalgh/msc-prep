@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 /mnist/data/
+/mnist/notebooks/data/
 /mnist/logs/
 *.swp
 /mnist/numba_dump/

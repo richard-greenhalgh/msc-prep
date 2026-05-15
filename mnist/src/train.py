@@ -18,11 +18,11 @@ DEBUG = False
 class TrainConfig:
     hidden_layers: list[Layer]
     seed: int = 42
-    max_epochs: int = 30
+    max_epochs: int = 20
     batch_size: int = 32
     optimizer: str = OPTIMIZER_ADAM
     learning_rate: float = 0.001
-    learning_rate_decay: float = 0.9
+    learning_rate_decay: float = 0.95
     live_plot: bool = False
     live_update_freq: int = 100   # redraw chart every X batches
     full_dataset: bool = True
@@ -35,9 +35,11 @@ def run(cfg: TrainConfig = None, dataset=None, showLossPlot=False, showPCA=False
     if cfg is None:
         cfg = TrainConfig([
             #Layer(LAYER_CONV2D, 8, CNN_kernel_size=(5,5), CNN_stride=1),
-            Layer(LAYER_CONV2D, 4, CNN_kernel_size=(3,3), CNN_stride=1),
-            Layer(LAYER_FLATTEN),
-            Layer(LAYER_DENSE, 32)
+            #Layer(LAYER_CONV2D, 4, CNN_kernel_size=(3,3), CNN_stride=1),
+            #Layer(LAYER_FLATTEN),
+            Layer(LAYER_DENSE, 128),
+            Layer(LAYER_DENSE, 64),
+            Layer(LAYER_DENSE, 32),
         ])
     if dataset is None:
         isConv2D = cfg.hidden_layers[0].type == LAYER_CONV2D
