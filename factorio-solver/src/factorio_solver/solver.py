@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from math import ceil
 from collections import defaultdict
-from factorio_solver.recipes import RecipeDB
+from factorio_solver.recipes import RecipeDB, RAW_ITEMS
 from factorio_solver.machines import default_machine_for
 
 @dataclass
@@ -19,14 +19,20 @@ class SolveResult:
     machines_by_recipe: dict[str, MachineRequirement]
     machines_by_type: dict[str, int]
 
-def solve(item: str, rate_per_min: float) -> SolveResult:
+def solve(item: str, rate_per_min: float, machine_policy:str = "EARLY_GAME") -> SolveResult:
     result = SolveResult(item_rates=defaultdict(float), recipe_rates=defaultdict(float),
                          raw_rates=defaultdict(float), machines_by_recipe={}, machines_by_type={})
     get_item_requirements(item, rate_per_min, result)
-    get_machine_requirements(result)
+    get_machine_requirements(result, machine_policy)
     return result
 
 def get_item_requirements(item: str, rate: float, results: SolveResult):
+    if item in RAW_ITEMS:
+        results.raw_rates[item] += rate
+        return results
+    if item not in RecipeDB:
+        raise ValueError(f"Unknown item: {item}")
+
     if item not in RecipeDB: # RAW ITEM
         results.raw_rates[item] += rate
     else:
@@ -41,11 +47,11 @@ def get_item_requirements(item: str, rate: float, results: SolveResult):
             get_item_requirements(ingredient, rate * adj_qty, results)
     return results
 
-def get_machine_requirements(result: SolveResult):
+def get_machine_requirements(result: SolveResult, machine_policy:str = "EARLY_GAME"):
     # machines by recipe
     for item, recipe_crafts_per_min in result.recipe_rates.items():
         recipe = RecipeDB[item]
-        machine = default_machine_for(recipe)
+        machine = default_machine_for(recipe, policy=machine_policy)
         machines_needed = recipe_crafts_per_min * recipe.time / 60 / machine.speed
         roundup = ceil(machines_needed)
         result.machines_by_recipe[item] = MachineRequirement(item, machine.name, machines_needed, roundup)
@@ -83,5 +89,7 @@ def print_solver_result(solver_result: SolveResult):
 
 
 if __name__ == "__main__":
-    result = solve("electronic_circuit", 45)
+    #result = solve("electronic_circuit", 1000)
+    result = solve("automation_science_pack", 60)
     print_solver_result(result)
+    #print(RecipeDB)
