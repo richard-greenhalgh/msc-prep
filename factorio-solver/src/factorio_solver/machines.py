@@ -18,14 +18,20 @@ DEFAULT_MACHINE_BY_CATEGORY = {
     "EARLY_GAME": {
         "crafting": "assembling_machine_1",
         "smelting": "stone_furnace",
+        "oil": "oil_refinery",
+        "chemical": "chemical_plant",
     },
     "MID_GAME": {
         "crafting": "assembling_machine_2",
         "smelting": "steel_furnace",
+        "oil": "oil_refinery",
+        "chemical": "chemical_plant",
     },
     "LATE_GAME": {
         "crafting": "assembling_machine_3",
         "smelting": "electric_furnace",
+        "oil": "oil_refinery",
+        "chemical": "chemical_plant",
     },
 }
 
@@ -59,5 +65,15 @@ MachineDB = {
         name="electric_furnace",
         categories={"smelting"},
         speed=2.0,
+    ),
+    "oil_refinery": Machine(
+        name="oil_refinery",
+        categories={"oil"},
+        speed=1.0,
+    ),
+    "chemical_plant": Machine(
+        name="chemical_plant",
+        categories={"chemical"},
+        speed=1.0,
     ),
 }
