@@ -63,29 +63,30 @@ def get_machine_requirements(result: SolveResult, machine_policy:str = "EARLY_GA
 
 
 def print_solver_result(solver_result: SolveResult):
+    _len = 25
     # Required inputs (excl raw)
     print("Items per minute:")
     for item, qty in solver_result.item_rates.items():
-        if item in RecipeDB: print(f" {item:<20} : {qty:8.2f}    |    Yellow Belts : {qty/900.0:8.2f}")
+        if item in RecipeDB: print(f" {item:<25} : {qty:8.2f}    |    Yellow Belts : {qty/900.0:8.2f}")
 
     print("\nCrafts per minute:")
     for item, qty in solver_result.recipe_rates.items():
-        if item in RecipeDB: print(f" {item:<20} : {qty:8.2f}")
+        if item in RecipeDB: print(f" {item:<25} : {qty:8.2f}")
 
     # Required inputs (raw only)
     print("\nRaw materials per minute:")
     for item, qty in solver_result.raw_rates.items():
-        if item not in RecipeDB: print(f" {item:<20} : {qty:8.2f}")
+        if item not in RecipeDB: print(f" {item:<25} : {qty:8.2f}")
     
     # Machines required
     print("\nMachines required (by recipe):")
     for r, req in solver_result.machines_by_recipe.items():
-        print(f" {r:<20} : {req.machine_name:<20} : {req.rounded_count:4d}  ({req.exact_count:6.2f})")
+        print(f" {r:<25} : {req.machine_name:<25} : {req.rounded_count:4d}  ({req.exact_count:6.2f})")
     
     # Machines required
     print("\nMachines required (by machine type):")
     for r, req in solver_result.machines_by_type.items():
-        print(f" {r:<20} : {req:4d}")
+        print(f" {r:<25} : {req:4d}")
 
 
 if __name__ == "__main__":
