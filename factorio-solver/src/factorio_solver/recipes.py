@@ -98,3 +98,11 @@ register_recipe("electric_engine_unit", "crafting", {GREEN:2, "engine_unit":1, "
 register_recipe("flying_robot_frame", "crafting", {"battery":2, "electric_engine_unit":1, GREEN:3, STEEL:1}, 1, 20.0)
 register_recipe("low_density_structure", "crafting", {COPPER:20, PLASTIC:5, STEEL:2}, 1, 15.0)
 register_recipe("utility_science_pack", "crafting", {"flying_robot_frame":1, LDS:3, BLUE:2}, 3, 21.0)
+
+for prefix in ["speed_", "productivity_", "efficiency_"]:
+    register_recipe(prefix+"module", "crafting", {RED:5, GREEN:5}, 1, 15.0)
+    register_recipe(prefix+"module_2", "crafting", {RED:5, BLUE:5, prefix+"module":4}, 1, 30.0)
+    register_recipe(prefix+"module_3", "crafting", {RED:5, BLUE:5, prefix+"module_2":4}, 1, 60.0)
+
+
+
