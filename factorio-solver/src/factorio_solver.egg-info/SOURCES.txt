@@ -1,6 +1,8 @@
 pyproject.toml
 src/factorio_solver/__init__.py
+src/factorio_solver/__main__.py
 src/factorio_solver/machines.py
+src/factorio_solver/matrix.py
 src/factorio_solver/recipes.py
 src/factorio_solver/solver.py
 src/factorio_solver.egg-info/PKG-INFO

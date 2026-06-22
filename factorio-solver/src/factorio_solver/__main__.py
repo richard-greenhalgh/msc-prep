@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from factorio_solver.solver import solve, print_solver_result
+from factorio_solver.matrix import verify_balance
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -28,11 +29,15 @@ def main() -> int:
             args.rate,
             machine_policy=args.machine_policy,
         )
+
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
     print_solver_result(result)
+
+    verify_balance(result, args.item, args.rate)
+
     return 0
 
 

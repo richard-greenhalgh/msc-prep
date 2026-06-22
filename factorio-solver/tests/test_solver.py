@@ -1,6 +1,7 @@
 # test_solver.py
 
 from factorio_solver.solver import solve
+from factorio_solver.matrix import verify_balance
 
 def test_electronic_circuit_item_rates():
     result = solve("electronic_circuit", 45)
@@ -53,3 +54,8 @@ def test_copper_cable_output_quantity():
     assert result.item_rates["copper_cable"] == 135
     assert result.recipe_rates["copper_cable"] == 67.5
 
+def test_matrix_balance_for_electronic_circuits():
+    result = solve("electronic_circuit", 45)
+    residual = verify_balance(result, "electronic_circuit", 45)
+
+    assert all(abs(value) < 1e-9 for value in residual.values())

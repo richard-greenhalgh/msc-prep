@@ -7,7 +7,9 @@ name = "factorio-solver"
 version = "0.1.0"
 description = "A Python production-chain solver for Factorio"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+	"numpy>=2.0",
+]
 
 [project.optional-dependencies]
 dev = ["pytest"]
