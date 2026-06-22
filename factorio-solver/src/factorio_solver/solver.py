@@ -33,18 +33,15 @@ def get_item_requirements(item: str, rate: float, results: SolveResult):
     if item not in RecipeDB:
         raise ValueError(f"Unknown item: {item}")
 
-    if item not in RecipeDB: # RAW ITEM
-        results.raw_rates[item] += rate
-    else:
-        R = RecipeDB[item]
+    R = RecipeDB[item]
 
-        results.item_rates[item] += rate
-        results.recipe_rates[item] += rate / R.outputs[item]
+    results.item_rates[item] += rate
+    results.recipe_rates[item] += rate / R.outputs[item]
 
-        for ingredient, qty in R.inputs.items():
-            # inputs required for a single item (some crafts produce more)
-            adj_qty = qty / R.outputs[item]
-            get_item_requirements(ingredient, rate * adj_qty, results)
+    for ingredient, qty in R.inputs.items():
+        # inputs required for a single item (some crafts produce more)
+        adj_qty = qty / R.outputs[item]
+        get_item_requirements(ingredient, rate * adj_qty, results)
     return results
 
 def get_machine_requirements(result: SolveResult, machine_policy:str = "EARLY_GAME"):

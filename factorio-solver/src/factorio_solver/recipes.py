@@ -44,6 +44,7 @@ GREEN = "electronic_circuit"
 RED = "advanced_circuit"
 BLUE = "processing_unit"
 
+# recipes with single output, where name of the recipe is the output
 def register_recipe(name:str, cat:str, inputs:dict, nout:int, time:float):
     assert cat in {"crafting", "smelting", "oil", "chemical"}
     RecipeDB[name] = Recipe(
@@ -51,6 +52,17 @@ def register_recipe(name:str, cat:str, inputs:dict, nout:int, time:float):
         category=cat,
         inputs=inputs,
         outputs={name:nout},
+        time=time
+    )
+
+# handles recipes with multiple outputs, e.g. advanced oil processing
+def register_complex_recipe(name:str, cat:str, inputs:dict, outputs:dict, time:float):
+    assert cat in {"crafting", "smelting", "oil", "chemical"}
+    RecipeDB[name] = Recipe(
+        name=name,
+        category=cat,
+        inputs=inputs,
+        outputs=outputs,
         time=time
     )
 
