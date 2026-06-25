@@ -4,5 +4,6 @@ Version: 0.1.0
 Summary: A Python production-chain solver for Factorio
 Requires-Python: >=3.11
 Requires-Dist: numpy>=2.0
+Requires-Dist: graphviz>=0.20
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"

@@ -7,3 +7,4 @@ __pycache__/
 /mnist/logs/
 *.swp
 /mnist/numba_dump/
+/factorio-solver/outputs/

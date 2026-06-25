@@ -21,6 +21,12 @@ def main() -> int:
         help="Which default machines to use for machine counts.",
     )
 
+    parser.add_argument(
+        "--graph",
+        metavar="PATH",
+        help="Write a production graph to this path, e.g. outputs/green_science",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -34,9 +40,18 @@ def main() -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
+    # output results
     print_solver_result(result)
-
     verify_balance(result, args.item, args.rate)
+
+    # output dependency graph?
+    if args.graph is not None:
+        from factorio_solver.graph import draw_production_graph
+
+        dot = draw_production_graph(result, args.item)
+        output_path = dot.render(args.graph, cleanup=True)
+
+        print(f"\nGraph written to: {output_path}")
 
     return 0
 

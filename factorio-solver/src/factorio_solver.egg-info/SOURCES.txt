@@ -1,6 +1,7 @@
 pyproject.toml
 src/factorio_solver/__init__.py
 src/factorio_solver/__main__.py
+src/factorio_solver/graph.py
 src/factorio_solver/machines.py
 src/factorio_solver/matrix.py
 src/factorio_solver/recipes.py

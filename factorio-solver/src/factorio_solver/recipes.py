@@ -18,6 +18,8 @@ RAW_ITEMS = {
     "water"
 }
 
+
+
 # Hard-coded recipes for MVP
 RecipeDB = {}
 
@@ -43,6 +45,10 @@ ACID = "sulfuric_acid"
 GREEN = "electronic_circuit"
 RED = "advanced_circuit"
 BLUE = "processing_unit"
+
+LIQUIDS = {
+    WATER, CRUDE, PETROL, ACID, "heavy_oil", "light_oil", "lubricant"
+}
 
 # recipes with single output, where name of the recipe is the output
 def register_recipe(name:str, cat:str, inputs:dict, nout:int, time:float):
